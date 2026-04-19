@@ -64,4 +64,96 @@ router.get('/applicants/:jobId', verifyToken, async (req, res) => {
   }
 });
 
+
+// backend/routes/admin.js
+
+// Fetch all applications
+router.get('/applications', verifyToken, async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                a.application_id,
+                s.full_name,
+                s.college_id,
+                s.department,
+                s.cgpa,
+                c.company_name,
+                a.job_role,
+                a.status
+            FROM applications a
+            JOIN students s ON a.student_id = s.student_id
+            JOIN companies c ON a.company_id = c.company_id
+            ORDER BY a.created_at DESC
+        `;
+        const { rows } = await pool.query(query);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).send("Server Error");
+    }
+});
+
+// Shortlist logic
+router.put('/applications/:id/shortlist', verifyToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'company') {
+            return res.status(403).json({ msg: "Access denied" });
+        }
+
+        const { id } = req.params;
+        const { status } = req.body; // Check if this matches your frontend JSON
+
+        const result = await pool.query(
+            `UPDATE applications a
+             SET shortlist_status = $1
+             FROM placement_drives d
+             WHERE a.application_id = $2
+               AND a.drive_id = d.drive_id
+               AND d.company_id = $3
+             RETURNING a.*`,
+            [status, id, req.user.id]
+        );
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ msg: "Application not found" });
+        }
+
+        res.json({ msg: "Status updated", data: result.rows[0] });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ msg: "Server error" });
+    }
+});
+
+// Example: Fetching applicants for a specific drive
+// Fetch all applications for the logged-in company across different jobs
+router.get('/all-applications', verifyToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'company') {
+            return res.status(403).json({ msg: "Access denied" });
+        }
+
+        const companyId = req.user.id; 
+        const query = `
+            SELECT 
+                a.application_id, 
+                s.full_name, 
+                u.email, 
+                s.cgpa, 
+                d.job_role, 
+                a.shortlist_status 
+            FROM applications a
+            JOIN students s ON a.student_id = s.student_id
+            JOIN users u ON s.student_id = u.user_id
+            JOIN placement_drives d ON a.drive_id = d.drive_id
+            WHERE d.company_id = $1
+            ORDER BY a.created_at DESC
+        `;
+        const { rows } = await pool.query(query, [companyId]);
+        res.json(rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ msg: "Server Error" });
+    }
+});
+
 module.exports = router;

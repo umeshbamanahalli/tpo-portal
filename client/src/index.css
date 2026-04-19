@@ -1,3 +1,56 @@
+/* index.css */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Poppins', sans-serif; /* Applies to everything */
+}
+
+/* responsive-home.css */
+
+/* Tablet & Desktop Adjustments */
+@media (max-width: 1024px) {
+  .hero-title {
+    font-size: 56px !important;
+  }
+  .navbar-container {
+    padding: 20px 40px !important;
+  }
+}
+
+/* Mobile Adjustments */
+@media (max-width: 768px) {
+  .navbar-container {
+    padding: 15px 20px !important;
+  }
+  .hero-title {
+    font-size: 42px !important;
+    line-height: 1.2 !important;
+  }
+  .hero-subtitle {
+    font-size: 16px !important;
+  }
+  .feature-grid {
+    grid-template-columns: 1fr !important; /* Stack cards vertically */
+    padding: 20px !important;
+  }
+  .trust-bar {
+    gap: 20px !important;
+    flex-direction: column;
+    align-items: center;
+  }
+  .nav-links {
+    gap: 8px !important;
+  }
+  .main-cta {
+    padding: 14px 30px !important;
+    font-size: 16px !important;
+    width: 100%;
+  }
+}
+
 /* :root {
   --text: #6b6375;
   --text-h: #08060d;

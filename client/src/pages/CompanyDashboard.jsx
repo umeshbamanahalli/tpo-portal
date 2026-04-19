@@ -1,24 +1,25 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  LayoutDashboard, PlusCircle, LogOut, 
-  Send, Users, BarChart3, ShieldAlert 
+import {
+  LayoutDashboard, PlusCircle, LogOut,
+  Send, Users, BarChart3, ShieldAlert, MapPin, ChevronLeft, Trash2, Calendar, Briefcase
 } from 'lucide-react';
 
 export default function CompanyDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [jobs, setJobs] = useState([]);
   const [applicants, setApplicants] = useState([]);
+  const [selectedDrive, setSelectedDrive] = useState(null);
   const [stats, setStats] = useState({ total_jobs: 0, total_applications: 0, total_shortlisted: 0 });
   const [isApproved, setIsApproved] = useState(true);
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState({ show: false, message: '', type: '' });
-
-  // Updated state to match SQL: placement_drives columns
-  const [newJob, setNewJob] = useState({ 
-    job_role: '', 
-    ctc_package: '', 
-    min_cgpa_required: '', 
-    deadline: '' 
+  
+  const [newJob, setNewJob] = useState({
+    job_role: '',
+    ctc_package: '',
+    min_cgpa_required: '',
+    deadline: '',
+    location: ''
   });
 
   const triggerNotification = (message, type) => {
@@ -33,31 +34,34 @@ export default function CompanyDashboard() {
       const res = await fetch('http://localhost:5000/api/jobs/my-jobs', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-
-      if (res.status === 403) {
-        setIsApproved(false);
-        return;
-      }
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        triggerNotification(errData.msg || "Failed to fetch job listings", "error");
-        setJobs([]);
-        return;
-      }
-
+      if (res.status === 403) { setIsApproved(false); return; }
       const data = await res.json();
       setJobs(Array.isArray(data) ? data : []);
       setIsApproved(true);
     } catch {
       triggerNotification("Failed to fetch job listings", "error");
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => {
-    fetchMyJobs();
-  }, [fetchMyJobs]);
+  useEffect(() => { fetchMyJobs(); }, [fetchMyJobs]);
+
+  const handleDeleteDrive = async (driveId) => {
+    if (!window.confirm("Are you sure? This will delete the drive and all student applications permanently.")) return;
+    
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`http://localhost:5000/api/jobs/delete/${driveId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        triggerNotification("Drive deleted successfully", "success");
+        setJobs(prev => prev.filter(j => j.drive_id !== driveId));
+      } else {
+        triggerNotification("Could not delete drive", "error");
+      }
+    } catch { triggerNotification("Server error during deletion", "error"); }
+  };
 
   const fetchAnalytics = async () => {
     try {
@@ -65,11 +69,6 @@ export default function CompanyDashboard() {
       const res = await fetch('http://localhost:5000/api/jobs/company-stats', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        triggerNotification(errData.msg || "Could not load analytics", "error");
-        return;
-      }
       const data = await res.json();
       setStats({
         total_jobs: Number(data?.total_jobs || 0),
@@ -77,30 +76,20 @@ export default function CompanyDashboard() {
         total_shortlisted: Number(data?.total_shortlisted || 0)
       });
       setActiveTab('analytics');
-    } catch {
-      triggerNotification("Could not load analytics", "error");
-    }
+    } catch { triggerNotification("Could not load analytics", "error"); }
   };
 
-  const fetchApplicants = async (driveId) => {
+  const fetchApplicants = async (drive) => {
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`http://localhost:5000/api/jobs/applicants/${driveId}`, {
+      const res = await fetch(`http://localhost:5000/api/jobs/applicants/${drive.drive_id}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        triggerNotification(errData.msg || "Error fetching applicants", "error");
-        setApplicants([]);
-        return;
-      }
       const data = await res.json();
       setApplicants(Array.isArray(data) ? data : []);
+      setSelectedDrive(drive);
       setActiveTab('view-applicants');
-    } catch {
-      triggerNotification("Error fetching applicants", "error");
-      setApplicants([]);
-    }
+    } catch { triggerNotification("Error fetching applicants", "error"); }
   };
 
   const handlePostJob = async (e) => {
@@ -109,50 +98,46 @@ export default function CompanyDashboard() {
     try {
       const response = await fetch('http://localhost:5000/api/jobs/add', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(newJob)
       });
-
       if (response.ok) {
         triggerNotification("Drive posted successfully!", "success");
-        setNewJob({ job_role: '', ctc_package: '', min_cgpa_required: '', deadline: '' });
+        setNewJob({ job_role: '', ctc_package: '', min_cgpa_required: '', deadline: '', location: '' });
         fetchMyJobs();
         setActiveTab('dashboard');
-      } else {
-        const errData = await response.json().catch(() => ({}));
-        triggerNotification(errData.msg || "Failed to publish drive", "error");
       }
-    } catch {
-      triggerNotification("Connection error", "error");
-    }
+    } catch { triggerNotification("Connection error", "error"); }
+  };
+
+  const handleShortlistUpdate = async (applicationId, newStatus) => {
+    if (!applicationId) return;
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`http://localhost:5000/api/jobs/applications/${applicationId}/shortlist`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (res.ok) {
+        triggerNotification(`Student ${newStatus}!`, "success");
+        setApplicants(prev => prev.map(app => 
+          (app.id === applicationId || app.application_id === applicationId) 
+          ? { ...app, status: newStatus } : app
+        ));
+      }
+    } catch (err) { console.error(err); }
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user_role');
+    localStorage.clear();
     window.location.replace('/login');
   };
-
-  if (!loading && !isApproved) {
-    return (
-      <div style={s.approvalOverlay}>
-        <ShieldAlert size={64} color="#f59e0b" style={{ marginBottom: '20px' }} />
-        <h2 style={{ color: '#0f172a' }}>Approval Pending</h2>
-        <p style={{ color: '#64748b', textAlign: 'center', maxWidth: '400px' }}>
-          Your company profile is under review by the TPO Admin.
-        </p>
-        <button style={{...s.secondaryBtn, marginTop: '20px'}} onClick={handleLogout}>Logout</button>
-      </div>
-    );
-  }
 
   return (
     <div style={s.pageWrapper}>
       {notification.show && (
-        <div style={{...s.notification, backgroundColor: notification.type === 'success' ? '#10b981' : '#ef4444'}}>
+        <div style={{ ...s.notification, backgroundColor: notification.type === 'success' ? '#10b981' : '#ef4444' }}>
           {notification.message}
         </div>
       )}
@@ -160,128 +145,159 @@ export default function CompanyDashboard() {
       <aside style={s.sidebar}>
         <div style={s.logoArea}><div style={s.logoIcon}>P</div><span style={s.logoText}>PlaceNext</span></div>
         <nav style={s.nav}>
-          <div onClick={() => setActiveTab('dashboard')} style={activeTab === 'dashboard' ? {...s.navItem, ...s.navActive} : s.navItem}><LayoutDashboard size={20} /> My Drives</div>
-          <div onClick={() => setActiveTab('post-job')} style={activeTab === 'post-job' ? {...s.navItem, ...s.navActive} : s.navItem}><PlusCircle size={20} /> Post New Drive</div>
-          <div onClick={fetchAnalytics} style={activeTab === 'analytics' ? {...s.navItem, ...s.navActive} : s.navItem}><BarChart3 size={20} /> Analytics</div>
+          <div onClick={() => setActiveTab('dashboard')} style={activeTab === 'dashboard' ? { ...s.navItem, ...s.navActive } : s.navItem}><LayoutDashboard size={20} /> My Drives</div>
+          <div onClick={() => {setActiveTab('view-applicants'); setSelectedDrive(null);}} style={activeTab === 'view-applicants' ? { ...s.navItem, ...s.navActive } : s.navItem}><Users size={20} /> View Applicants</div>
+          <div onClick={() => setActiveTab('post-job')} style={activeTab === 'post-job' ? { ...s.navItem, ...s.navActive } : s.navItem}><PlusCircle size={20} /> Post New Drive</div>
+          <div onClick={fetchAnalytics} style={activeTab === 'analytics' ? { ...s.navItem, ...s.navActive } : s.navItem}><BarChart3 size={20} /> Analytics</div>
         </nav>
-        <button style={s.logoutBtnSidebar} onClick={handleLogout}>
-          <LogOut size={18} />
-          Logout
-        </button>
       </aside>
 
       <main style={s.mainContent}>
         <header style={s.topHeader}>
           <h1 style={s.welcome}>
-            {activeTab === 'view-applicants' ? 'Student Applications' : 
-             activeTab === 'analytics' ? 'Company Analytics' : 'Company Console'}
+            {activeTab === 'view-applicants' ? (selectedDrive ? `Applicants: ${selectedDrive.job_role}` : 'Drive Directory') : 
+             activeTab === 'post-job' ? 'Launch New Drive' : 
+             activeTab === 'analytics' ? 'Insights Dashboard' : 'Company HQ'}
           </h1>
-          <button style={s.logoutBtnHeader} onClick={handleLogout}>
-            <LogOut size={16}/>
-            Logout
-          </button>
+          <button style={s.logoutBtnHeader} onClick={handleLogout}><LogOut size={16} /> Logout</button>
         </header>
 
-        {activeTab === 'analytics' ? (
-          <div style={s.analyticsGrid}>
-            <div style={s.statCard}>
-              <h3 style={s.statLabel}>Drives Conducted</h3>
-              <p style={s.statValue}>{stats.total_jobs}</p>
-            </div>
-            <div style={s.statCard}>
-              <h3 style={s.statLabel}>Total Applicants</h3>
-              <p style={s.statValue}>{stats.total_applications}</p>
-            </div>
-            <div style={s.statCard}>
-              <h3 style={s.statLabel}>Shortlisted</h3>
-              <p style={{...s.statValue, color: '#10b981'}}>{stats.total_shortlisted}</p>
-            </div>
-          </div>
-        ) : activeTab === 'view-applicants' ? (
-          <div style={s.tableContainer}>
-             <table style={s.table}>
-              <thead>
-                <tr>
-                  <th style={s.th}>Student Name</th>
-                  <th style={s.th}>Email</th>
-                  <th style={s.th}>CGPA</th>
-                  <th style={s.th}>Status</th>
-                  <th style={s.th}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {applicants.length === 0 && (
-                  <tr>
-                    <td style={s.emptyApplicantsCell} colSpan={5}>
-                      No applicants yet for this drive.
-                    </td>
-                  </tr>
-                )}
-                {applicants.map((app, index) => (
-                  <tr key={app.id || app.application_id || `${app.email || 'app'}-${index}`}>
-                    <td style={s.td}>{app.full_name}</td>
-                    <td style={s.td}>{app.email}</td>
-                    <td style={s.td}>{app.cgpa}</td>
-                    <td style={s.td}><span style={s.statusBadge}>{app.status}</span></td>
-                    <td style={s.td}><button style={s.viewBtn}>Shortlist</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : activeTab === 'post-job' ? (
-          <div style={s.card}>
-            <h2 style={s.cardTitle}>Add New Placement Drive</h2>
-            <form onSubmit={handlePostJob}>
-              <div style={s.formGrid}>
-                <div style={s.formGroup}>
-                  <label style={s.label}>Job Role</label>
-                  <input required style={s.inputField} value={newJob.job_role} onChange={(e)=>setNewJob({...newJob, job_role: e.target.value})} placeholder="e.g. Full Stack Developer" />
-                </div>
-                <div style={s.formGroup}>
-                  <label style={s.label}>Package (LPA)</label>
-                  <input required type="number" step="0.1" style={s.inputField} value={newJob.ctc_package} onChange={(e)=>setNewJob({...newJob, ctc_package: e.target.value})} placeholder="e.g. 12.5" />
-                </div>
-                <div style={s.formGroup}>
-                  <label style={s.label}>Min CGPA Required</label>
-                  <input required type="number" step="0.01" style={s.inputField} value={newJob.min_cgpa_required} onChange={(e)=>setNewJob({...newJob, min_cgpa_required: e.target.value})} placeholder="e.g. 7.5" />
-                </div>
-                <div style={s.formGroup}>
-                  <label style={s.label}>Deadline</label>
-                  <input required type="date" style={s.inputField} value={newJob.deadline} onChange={(e)=>setNewJob({...newJob, deadline: e.target.value})} />
-                </div>
-              </div>
-              <button type="submit" style={s.primaryBtn}><Send size={18} /> Publish Drive</button>
-            </form>
-          </div>
-        ) : (
+        {activeTab === 'dashboard' && (
           <div style={s.tableContainer}>
             <table style={s.table}>
               <thead>
                 <tr>
                   <th style={s.th}>Job Role</th>
-                  <th style={s.th}>CTC (LPA)</th>
-                  <th style={s.th}>Cutoff</th>
+                  <th style={s.th}>Details</th>
                   <th style={s.th}>Deadline</th>
-                  <th style={s.th}>Actions</th>
+                  <th style={s.th}>Manage</th>
                 </tr>
               </thead>
               <tbody>
                 {jobs.map(drive => (
-                  <tr key={drive.drive_id}>
-                    <td style={s.td}><strong>{drive.job_role}</strong></td>
-                    <td style={s.td}>{drive.ctc_package}</td>
-                    <td style={s.td}>{drive.min_cgpa_required}</td>
-                    <td style={s.td}>{new Date(drive.deadline).toLocaleDateString()}</td>
+                  <tr key={drive.drive_id} style={s.trHover}>
                     <td style={s.td}>
-                      <button style={s.viewBtn} onClick={() => fetchApplicants(drive.drive_id)}>
-                        <Users size={14} /> View Applicants
-                      </button>
+                      <div style={{fontWeight: '700', color: '#0f172a'}}>{drive.job_role}</div>
+                      <div style={{fontSize: '12px', color: '#64748b', display:'flex', alignItems:'center', gap:'4px'}}><MapPin size={12}/>{drive.location || 'N/A'}</div>
+                    </td>
+                    <td style={s.td}>
+                      <div style={s.infoRow}><span style={s.badgeLabel}>CTC</span> {drive.ctc_package} LPA</div>
+                      <div style={s.infoRow}><span style={s.badgeLabel}>GPA</span> {drive.min_cgpa_required} min</div>
+                    </td>
+                    <td style={s.td}>
+                       <div style={{display:'flex', alignItems:'center', gap:'6px', color:'#dc2626', fontSize:'13px', fontWeight:'600'}}>
+                         <Calendar size={14}/> {new Date(drive.deadline).toLocaleDateString()}
+                       </div>
+                    </td>
+                    <td style={s.td}>
+                      <div style={{display:'flex', gap:'10px'}}>
+                        <button style={s.manageBtn} onClick={() => fetchApplicants(drive)}>Manage</button>
+                        <button style={s.deleteBtn} onClick={() => handleDeleteDrive(drive.drive_id)}><Trash2 size={16}/></button>
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {activeTab === 'view-applicants' && (
+          <>
+            {!selectedDrive ? (
+              <div style={s.driveSelectionGrid}>
+                {jobs.map(drive => (
+                  <div key={drive.drive_id} style={s.driveOptionCard} onClick={() => fetchApplicants(drive)}>
+                    <div style={s.driveCardIcon}><Briefcase size={24} color="#2563eb" /></div>
+                    <div style={{flex:1}}>
+                      <h3 style={{margin:0, fontSize:'16px', fontWeight:'700'}}>{drive.job_role}</h3>
+                      <p style={{margin:0, fontSize:'13px', color:'#64748b'}}>{drive.location || 'Remote'}</p>
+                    </div>
+                    <div style={s.arrowBadge}>→</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={s.tableContainer}>
+                <div style={s.tableHeaderAction}>
+                    <button style={s.backLink} onClick={() => setSelectedDrive(null)}><ChevronLeft size={18}/> Back to Drive List</button>
+                    <div style={s.statusPill}>Total: {applicants.length}</div>
+                </div>
+                <table style={s.table}>
+                  <thead>
+                    <tr>
+                      <th style={s.th}>Student Name</th>
+                      <th style={s.th}>CGPA</th>
+                      <th style={s.th}>Status</th>
+                      <th style={s.th}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {applicants.length === 0 ? <tr><td colSpan={4} style={s.emptyApplicantsCell}>No students have applied yet.</td></tr> : 
+                    applicants.map(app => (
+                      <tr key={app.id || app.application_id}>
+                        <td style={s.td}><div style={{fontWeight:'600'}}>{app.full_name}</div></td>
+                        <td style={s.td}>{app.cgpa}</td>
+                        <td style={s.td}>
+                           <span style={{...s.statusBadge, 
+                             backgroundColor: app.status === 'shortlisted' ? '#dcfce7' : app.status === 'rejected' ? '#fee2e2' : '#f1f5f9',
+                             color: app.status === 'shortlisted' ? '#166534' : app.status === 'rejected' ? '#991b1b' : '#475569'
+                           }}>
+                             {app.status}
+                           </span>
+                        </td>
+                        <td style={s.td}>
+                          {app.status === 'applied' ? (
+                            <div style={{display:'flex', gap:'8px'}}>
+                              <button style={s.acceptBtn} onClick={() => handleShortlistUpdate(app.id || app.application_id, 'shortlisted')}>Shortlist</button>
+                              <button style={s.rejectBtnAction} onClick={() => handleShortlistUpdate(app.id || app.application_id, 'rejected')}>Reject</button>
+                            </div>
+                          ) : <span style={{fontSize:'12px', color:'#94a3b8', fontWeight:'700'}}>PROCESSED</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+
+        {activeTab === 'post-job' && (
+          <div style={s.card}>
+            <form onSubmit={handlePostJob}>
+              <div style={s.formGrid}>
+                <div style={s.formGroup}>
+                  <label style={s.label}>Job Role</label>
+                  <input required style={s.inputField} value={newJob.job_role} onChange={e => setNewJob({...newJob, job_role: e.target.value})} placeholder="e.g. Senior Product Designer" />
+                </div>
+                <div style={s.formGroup}>
+                  <label style={s.label}>Work Location</label>
+                  <input required style={s.inputField} value={newJob.location} onChange={e => setNewJob({...newJob, location: e.target.value})} placeholder="e.g. Pune (Office) / Remote" />
+                </div>
+                <div style={s.formGroup}>
+                  <label style={s.label}>CTC (Annual LPA)</label>
+                  <input required type="number" step="0.1" style={s.inputField} value={newJob.ctc_package} onChange={e => setNewJob({...newJob, ctc_package: e.target.value})} />
+                </div>
+                <div style={s.formGroup}>
+                  <label style={s.label}>Min CGPA Requirement</label>
+                  <input required type="number" step="0.01" style={s.inputField} value={newJob.min_cgpa_required} onChange={e => setNewJob({...newJob, min_cgpa_required: e.target.value})} />
+                </div>
+                <div style={s.formGroup}>
+                  <label style={s.label}>Application Deadline</label>
+                  <input required type="date" style={s.inputField} value={newJob.deadline} onChange={e => setNewJob({...newJob, deadline: e.target.value})} />
+                </div>
+              </div>
+              <button type="submit" style={s.primaryBtn}><Send size={18} /> Publish to Placement Portal</button>
+            </form>
+          </div>
+        )}
+
+        {activeTab === 'analytics' && (
+          <div style={s.analyticsGrid}>
+            <div style={s.statCard}><h3 style={s.statLabel}>Active Drives</h3><p style={s.statValue}>{stats.total_jobs}</p></div>
+            <div style={s.statCard}><h3 style={s.statLabel}>Applications</h3><p style={s.statValue}>{stats.total_applications}</p></div>
+            <div style={s.statCard}><h3 style={s.statLabel}>Hired/Shortlisted</h3><p style={{...s.statValue, color:'#10b981'}}>{stats.total_shortlisted}</p></div>
           </div>
         )}
       </main>
@@ -290,69 +306,52 @@ export default function CompanyDashboard() {
 }
 
 const s = {
-  viewBtn: { display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 12px', backgroundColor: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' },
-  statusBadge: { padding: '4px 8px', backgroundColor: '#f1f5f9', borderRadius: '6px', fontSize: '12px', fontWeight: '600', textTransform: 'capitalize' },
-  pageWrapper: { display: 'flex', minHeight: '100vh', backgroundColor: '#f8fafc', fontFamily: 'Inter, system-ui' },
-  approvalOverlay: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', width: '100vw', backgroundColor: '#f8fafc' },
-  notification: { position: 'fixed', top: '20px', right: '20px', padding: '15px 25px', color: '#fff', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', zIndex: 1000, boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' },
-  sidebar: { width: '260px', backgroundColor: '#fff', position: 'fixed', height: '100vh', padding: '30px 20px', display: 'flex', flexDirection: 'column', borderRight: '1px solid #e2e8f0' },
-  logoArea: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '40px' },
-  logoIcon: { backgroundColor: '#0f172a', color: '#fff', width: '35px', height: '35px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' },
-  logoText: { fontSize: '20px', fontWeight: '800', color: '#0f172a' },
-  nav: { flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' },
-  navItem: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 15px', borderRadius: '12px', color: '#64748b', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' },
-  navActive: { backgroundColor: '#f1f5f9', color: '#0f172a' },
-  logoutBtnSidebar: {
-    border: '1px solid #fecaca',
-    background: 'linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%)',
-    color: '#dc2626',
-    fontWeight: '700',
-    cursor: 'pointer',
-    display: 'flex',
-    gap: '8px',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '12px',
-    borderRadius: '12px',
-    marginTop: 'auto',
-    transition: 'all 0.2s ease'
-  },
-  mainContent: { flex: 1, marginLeft: '260px', padding: '40px 50px' },
-  topHeader: { display: 'flex', justifyContent: 'space-between', marginBottom: '40px', alignItems: 'center' },
-  welcome: { fontSize: '28px', fontWeight: '800', margin: 0, color: '#0f172a' },
-  card: { backgroundColor: '#fff', padding: '30px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)' },
-  cardTitle: { marginTop: 0, marginBottom: '25px', fontSize: '20px' },
-  tableContainer: { backgroundColor: '#fff', borderRadius: '20px', border: '1px solid #e2e8f0', overflow: 'hidden' },
+  // Enhanced Button Styles
+  manageBtn: { padding: '8px 16px', backgroundColor: '#1e293b', color: '#fff', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: '700', fontSize: '13px', transition: '0.2s' },
+  deleteBtn: { padding: '8px', backgroundColor: '#fff', color: '#ef4444', border: '1px solid #fee2e2', borderRadius: '10px', cursor: 'pointer', transition: '0.2s' },
+  acceptBtn: { padding: '8px 14px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '12px' },
+  rejectBtnAction: { padding: '8px 14px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '12px' },
+  
+  // Grid & Layout Enhancements
+  driveSelectionGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' },
+  driveOptionCard: { backgroundColor: '#fff', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '18px', transition: '0.3s cubic-bezier(0.4, 0, 0.2, 1)', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' },
+  driveCardIcon: { backgroundColor: '#eff6ff', padding: '12px', borderRadius: '12px' },
+  arrowBadge: { backgroundColor: '#f8fafc', width: '30px', height: '30px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontWeight: 'bold' },
+  
+  // Dashboard Table Extras
+  badgeLabel: { fontSize: '10px', fontWeight: '800', color: '#94a3b8', marginRight: '5px' },
+  infoRow: { fontSize: '13px', display: 'flex', alignItems: 'center', marginBottom: '4px' },
+  tableHeaderAction: { padding: '20px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  statusPill: { backgroundColor: '#f1f5f9', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '700', color: '#475569' },
+  
+  // Core Page Styling
+  pageWrapper: { display: 'flex', minHeight: '100vh', backgroundColor: '#f8fafc', fontFamily: '"Plus Jakarta Sans", sans-serif' },
+  sidebar: { width: '280px', backgroundColor: '#fff', position: 'fixed', height: '100vh', padding: '40px 24px', display: 'flex', flexDirection: 'column', borderRight: '1px solid #e2e8f0' },
+  logoArea: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '48px' },
+  logoIcon: { backgroundColor: '#2563eb', color: '#fff', width: '40px', height: '40px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900', fontSize: '20px' },
+  logoText: { fontSize: '22px', fontWeight: '800', color: '#0f172a', letterSpacing: '-0.5px' },
+  nav: { flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' },
+  navItem: { display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 16px', borderRadius: '14px', color: '#64748b', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' },
+  navActive: { backgroundColor: '#eff6ff', color: '#2563eb' },
+  mainContent: { flex: 1, marginLeft: '280px', padding: '48px 60px' },
+  topHeader: { display: 'flex', justifyContent: 'space-between', marginBottom: '48px', alignItems: 'center' },
+  welcome: { fontSize: '32px', fontWeight: '800', color: '#0f172a', letterSpacing: '-1px' },
+  card: { backgroundColor: '#fff', padding: '40px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.04)' },
+  tableContainer: { backgroundColor: '#fff', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' },
   table: { width: '100%', borderCollapse: 'collapse' },
-  th: { padding: '15px 20px', backgroundColor: '#f8fafc', textAlign: 'left', fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase' },
-  td: { padding: '15px 20px', borderBottom: '1px solid #f1f5f9', fontSize: '14px', color: '#1e293b' },
-  formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '25px' },
-  formGroup: { display: 'flex', flexDirection: 'column', gap: '8px' },
-  label: { fontSize: '13px', fontWeight: 'bold', color: '#475569' },
-  inputField: { padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', outline: 'none' },
-  primaryBtn: { padding: '12px 24px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', gap: '8px', alignItems: 'center' },
-  secondaryBtn: { padding: '10px 20px', backgroundColor: '#fff', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: '10px', cursor: 'pointer', display: 'flex', gap: '5px', alignItems: 'center', fontWeight: '600' },
-  logoutBtnHeader: {
-    padding: '10px 18px',
-    background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '12px',
-    cursor: 'pointer',
-    display: 'flex',
-    gap: '8px',
-    alignItems: 'center',
-    fontWeight: '700',
-    boxShadow: '0 8px 20px -8px rgba(220, 38, 38, 0.6)'
-  },
-  analyticsGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' },
-  statCard: { backgroundColor: '#fff', padding: '25px', borderRadius: '20px', border: '1px solid #e2e8f0', textAlign: 'center' },
-  statLabel: { fontSize: '14px', color: '#64748b', marginBottom: '10px' },
-  statValue: { fontSize: '32px', fontWeight: '800', color: '#0f172a', margin: 0 },
-  emptyApplicantsCell: {
-    padding: '24px 20px',
-    textAlign: 'center',
-    color: '#64748b',
-    fontWeight: '600'
-  }
+  th: { padding: '18px 24px', backgroundColor: '#f8fafc', textAlign: 'left', fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '800', letterSpacing: '1px' },
+  td: { padding: '20px 24px', borderBottom: '1px solid #f8fafc', fontSize: '14px' },
+  formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '32px' },
+  formGroup: { display: 'flex', flexDirection: 'column', gap: '10px' },
+  label: { fontSize: '14px', fontWeight: '700', color: '#1e293b' },
+  inputField: { padding: '14px', borderRadius: '14px', border: '1px solid #e2e8f0', outline: 'none', transition: '0.2s', ':focus': { borderColor: '#2563eb' } },
+  primaryBtn: { padding: '16px 32px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '16px', fontWeight: '700', cursor: 'pointer', display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'center' },
+  statusBadge: { padding: '6px 12px', borderRadius: '10px', fontSize: '12px', fontWeight: '800', textTransform: 'uppercase' },
+  notification: { position: 'fixed', top: '30px', right: '30px', padding: '16px 32px', color: '#fff', borderRadius: '16px', zIndex: 1000, fontWeight: '700', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' },
+  analyticsGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' },
+  statCard: { backgroundColor: '#fff', padding: '32px', borderRadius: '24px', border: '1px solid #e2e8f0', textAlign: 'left' },
+  statLabel: { fontSize: '14px', color: '#64748b', fontWeight: '700', marginBottom: '8px' },
+  statValue: { fontSize: '40px', fontWeight: '900', color: '#0f172a', margin: 0, letterSpacing: '-1px' },
+  backLink: { background: 'none', border: 'none', color: '#2563eb', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' },
+  logoutBtnHeader: { padding: '10px 20px', backgroundColor: '#fef2f2', color: '#ef4444', border: 'none', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '800', fontSize: '13px' }
 };

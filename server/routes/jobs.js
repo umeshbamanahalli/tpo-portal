@@ -11,18 +11,20 @@ router.post('/add', verifyToken, async (req, res) => {
         return res.status(403).json({ msg: "Only companies can post jobs" });
     }
 
-    const { job_role, ctc_package, min_cgpa_required, deadline } = req.body;
-    const company_id = req.user.id; // Extracted from JWT by verifyToken
+    const { job_role, ctc_package, min_cgpa_required, deadline, location } = req.body;
+    const company_id = req.user.id; 
 
     try {
         const newDrive = await pool.query(
-            `INSERT INTO placement_drives (company_id, job_role, min_cgpa_required, ctc_package, deadline, status) 
-             VALUES ($1::uuid, $2, $3, $4, $5, 'active') RETURNING *`,
-            [company_id, job_role, min_cgpa_required, ctc_package, deadline]
+            // Count: 1:company_id, 2:job_role, 3:min_cgpa, 4:ctc, 5:deadline, 6:status, 7:location
+            `INSERT INTO placement_drives (company_id, job_role, min_cgpa_required, ctc_package, deadline, status, location) 
+             VALUES ($1::uuid, $2, $3, $4, $5, 'active', $6) RETURNING *`, 
+             // Added $6 above ^
+            [company_id, job_role, min_cgpa_required, ctc_package, deadline, location]
         );
         res.status(201).json({ msg: "Drive posted successfully", drive: newDrive.rows[0] });
     } catch (err) {
-        console.error(err.message);
+        console.error("SQL Error:", err.message);
         res.status(500).json({ error: "Database Error" });
     }
 });
@@ -110,4 +112,55 @@ router.get('/applicants/:driveId', verifyToken, async (req, res) => {
     res.status(500).json({ error: "Server error fetching applicants" });
   }
 });
+
+
+router.get('/all-applications', verifyToken, async (req, res) => {
+  try {
+    const companyId = req.user.id;
+    const query = `
+      SELECT 
+        a.application_id as id,
+        s.full_name, 
+        u.email, 
+        d.job_role, 
+        a.status as shortlist_status,
+        s.cgpa
+      FROM applications a
+      JOIN students s ON a.student_id = s.student_id
+      JOIN users u ON s.student_id = u.user_id
+      JOIN placement_drives d ON a.drive_id = d.drive_id
+      WHERE d.company_id = $1::uuid
+      ORDER BY a.applied_at DESC
+    `;
+    const result = await pool.query(query, [companyId]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: "Server error fetching all applications" });
+  }
+});
+
+// 2. The Shortlist logic (moved here to avoid 404s)
+router.put('/applications/:id/shortlist', verifyToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        // Force lowercase to satisfy the 'shortlisted' check constraint
+        const status = req.body.status.toLowerCase(); 
+
+        const result = await pool.query(
+            "UPDATE applications SET status = $1 WHERE application_id = $2 RETURNING *",
+            [status, id]
+        );
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ msg: "Application not found" });
+        }
+
+        res.json({ msg: "Status updated", data: result.rows[0] });
+    } catch (err) {
+        console.error("SQL Error:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

@@ -6,6 +6,7 @@ import StudentDashboard from './pages/StudentDashboard';
 import AdminDashboard from './pages/AdminDashboard'; // Don't forget these imports!
 import CompanyDashboard from './pages/CompanyDashboard';
 import './App.css';
+import ForgotPassword from './pages/ForgotPassword';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, allowedRole }) => {
@@ -32,6 +33,7 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path='/forgot-password' element={<ForgotPassword />}/>
 
         {/* Private Student Route */}
         <Route path="/student-dashboard" element={
