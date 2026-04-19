@@ -88,7 +88,7 @@ Update .env file with correct database credentials.
 Do not expose .env file publicly.
 
 Author
-Your Name
+Tempx
 
 Future Improvements
 Resume upload feature
