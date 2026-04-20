@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Briefcase, LayoutDashboard, LogOut, FileText, CheckCircle2, 
   AlertCircle, RefreshCcw, UserCircle, GraduationCap, 
-  MapPin, Upload, ChevronRight, X
+  MapPin, Upload, ChevronRight, X,Clock
 } from 'lucide-react';
 
 export default function StudentDashboard() {
@@ -29,6 +29,7 @@ export default function StudentDashboard() {
       ]);
       setStudent(profileRes.data);
       setJobs(Array.isArray(drivesRes.data) ? drivesRes.data : []);
+      console.log("JOBS: ",jobs);
       setApplications(Array.isArray(appRes.data) ? appRes.data : []);
     } catch (err) { console.error("Sync Error", err); } 
     finally { setLoading(false); }
@@ -41,13 +42,26 @@ export default function StudentDashboard() {
     return () => window.removeEventListener('resize', handleResize);
   }, [fetchData]);
 
-  const handleApply = async (driveId) => {
-    try {
-      const token = localStorage.getItem('token');
-      await axios.post('http://localhost:5000/api/student/apply', { drive_id: driveId }, { headers: { Authorization: `Bearer ${token}` } });
-      fetchData();
-    } catch (err) { alert(err.response?.data?.msg || "Apply failed"); }
-  };
+ const handleApply = async (driveId) => {
+  // Check if student has uploaded a resume
+  if (!student?.resume_url) {
+    alert(" Resume Required: Please upload your resume in the 'My Profile' tab before applying.");
+    setActiveTab('profile'); // Automatically redirect them to the profile update page
+    return;
+  }
+
+  try {
+    const token = localStorage.getItem('token');
+    await axios.post('http://localhost:5000/api/student/apply', 
+      { drive_id: driveId }, 
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    fetchData(); // Refresh to show "Applied" status
+    alert("Application successful!");
+  } catch (err) { 
+    alert(err.response?.data?.msg || "Apply failed"); 
+  }
+};
 
   const handleUpdateProfile = async () => {
     try {
@@ -76,8 +90,14 @@ export default function StudentDashboard() {
       {/* --- Navigation --- */}
       {!isMobile ? (
         <aside style={s.sidebar}>
-          <div style={s.logoArea}><div style={s.logoIcon}>PN</div><span style={s.logoText}>PlaceNext</span></div>
-          <nav style={s.nav}>
+ <div style={s.logoArea}>
+          <div style={s.logoIcon}>PN</div>
+          <div>
+            <div style={s.logoText}>PlaceNext</div>
+            <div style={s.logoAdmin}>STUDENT PANEL</div>
+          </div>
+        </div>         
+         <nav style={s.nav}>
             <NavItem active={activeTab === 'dashboard'} icon={<LayoutDashboard size={20}/>} label="Dashboard" onClick={() => setActiveTab('dashboard')} />
             <NavItem active={activeTab === 'applied'} icon={<Briefcase size={20}/>} label="Applications" onClick={() => setActiveTab('applied')} />
             <NavItem active={activeTab === 'profile'} icon={<UserCircle size={20}/>} label="My Profile" onClick={() => setActiveTab('profile')} />
@@ -117,7 +137,7 @@ export default function StudentDashboard() {
               <h2 style={s.gridTitle}>Eligible Drives</h2>
               <div style={s.jobGrid}>
                 {jobs.map(job => (
-                  <JobCard key={job.drive_id} job={job} onApply={handleApply} hasApplied={applications.some(app => app.drive_id === job.drive_id)} isEligible={parseFloat(student?.cgpa) >= parseFloat(job.min_cgpa_required)} />
+                  <JobCard key={job.drive_id} job={job} onApply={handleApply} hasApplied={applications.some(app => app.drive_id === job.drive_id)} isEligible={parseFloat(student?.cgpa) >= parseFloat(job.min_cgpa_required)} hasResume={!!student?.resume_url}/>
                 ))}
               </div>
             </motion.div>
@@ -163,13 +183,68 @@ const NavItem = ({ active, icon, label, onClick }) => (
   <div onClick={onClick} style={active ? { ...s.navItem, ...s.navActive } : s.navItem}>{icon} {label}</div>
 );
 
-const JobCard = ({ job, hasApplied, isEligible, onApply }) => (
-  <div style={s.jobCard}>
-    <div style={s.jobTop}><div style={s.jobRole}>{job.job_role}</div><div style={s.jobPackage}>{job.ctc_package} LPA</div></div>
-    <div style={s.companyInfo}><MapPin size={14} /> {job.company_name}</div>
-    {hasApplied ? <div style={s.appliedBadge}>Applied</div> : !isEligible ? <div style={s.lockedButton}>Ineligible</div> : <button style={s.applyButton} onClick={() => onApply(job.drive_id)}>Apply Now</button>}
-  </div>
-);
+const JobCard = ({ job, hasApplied, isEligible, hasResume, onApply }) => {
+  // Logic to check if the deadline is approaching (within 2 days)
+  const isClosingSoon = new Date(job.deadline) - new Date() < 172800000;
+
+  return (
+    <div style={s.jobCard}>
+      {/* Header with Role and Package */}
+      <div style={s.jobTop}>
+        <div>
+          <div style={s.jobRole}>{job.job_role}</div>
+          <div style={s.companyInfo}>
+            <Briefcase size={14} /> {job.company_name}
+          </div>
+        </div>
+        <div style={s.jobPackage}>{job.ctc_package} LPA</div>
+      </div>
+
+      <hr style={{ border: '0', borderTop: '1px solid #f1f5f9', margin: '15px 0' }} />
+
+      {/* Details Row: Location and Eligibility */}
+      <div style={s.detailContainer}>
+        <div style={s.infoItem}>
+          <MapPin size={14} color="#64748b" />
+          <span>{job.location || "On-Campus"}</span>
+        </div>
+        <div style={s.infoItem}>
+          <AlertCircle size={14} color={isEligible ? "#10b981" : "#ef4444"} />
+          <span>Min. {job.min_cgpa_required} CGPA</span>
+        </div>
+      </div>
+
+      {/* Deadline Info */}
+      <div style={{...s.infoItem, marginTop: '10px', color: isClosingSoon ? '#ef4444' : '#64748b'}}>
+        <Clock size={14} />
+        <span style={{fontWeight: isClosingSoon ? '700' : '500'}}>
+          Deadline: {new Date(job.deadline).toLocaleDateString()}
+        </span>
+      </div>
+
+      <div style={{ marginTop: '20px' }}>
+      {hasApplied ? (
+        <div style={s.appliedBadge}>Applied</div>
+      ) : !isEligible ? (
+        <div style={s.lockedButton}>Criteria Not Met</div>
+      ) : !hasResume ? (
+        /* If student is eligible but HAS NO RESUME */
+        <button 
+          style={{...s.applyButton, backgroundColor: '#94a3b8', cursor: 'not-allowed'}} 
+          disabled
+        >
+          Upload Resume to Apply
+        </button>
+      ) : (
+        /* Standard Apply Button */
+        <button style={s.applyButton} onClick={() => onApply(job.drive_id)}>
+          Apply Now
+        </button>
+      )}
+    </div>
+    </div>
+  );
+};
 
 const s = {
   pageWrapper: { display: 'flex', minHeight: '100vh', backgroundColor: '#f8fafc', fontFamily: 'Inter, sans-serif' },
@@ -187,7 +262,7 @@ const s = {
   statBigValue: { fontSize: '32px', fontWeight: '900', margin: 0 },
   gridTitle: { fontSize: '20px', fontWeight: '900', marginBottom: '20px' },
   jobGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' },
-  jobCard: { backgroundColor: '#fff', padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0' },
+  // jobCard: { backgroundColor: '#fff', padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0' },
   jobTop: { display: 'flex', justifyContent: 'space-between', marginBottom: '10px' },
   jobRole: { fontWeight: '800', color: '#0f172a' },
   jobPackage: { color: '#3b82f6', fontWeight: '800' },
@@ -201,6 +276,7 @@ const s = {
   logoArea: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '40px' },
   logoIcon: { background: '#3b82f6', color: '#fff', padding: '5px 8px', borderRadius: '8px', fontWeight: '900' },
   logoText: { fontSize: '20px', fontWeight: '800' },
+    logoAdmin: { fontSize: '10px', color: '#3b82f6', fontWeight: '900', letterSpacing: '1px' },
   logoutBtn: { marginTop: 'auto', padding: '12px', borderRadius: '12px', border: 'none', backgroundColor: '#fef2f2', color: '#ef4444', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' },
   flexBetween: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   linkBox: { padding: '10px', backgroundColor: '#f8fafc', borderRadius: '10px', marginTop: '10px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: '#475569' },
@@ -212,5 +288,34 @@ const s = {
   label: { fontSize: '13px', fontWeight: '700', color: '#475569' },
   inputField: { padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', outline: 'none' },
   detailRow: { display: 'flex', justifyContent: 'space-between', fontSize: '14px' },
-  emptyText: { color: '#94a3b8', textAlign: 'center', width: '100%', padding: '40px' }
+  emptyText: { color: '#94a3b8', textAlign: 'center', width: '100%', padding: '40px' },
+
+  detailContainer: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '10px',
+    flexWrap: 'wrap'
+  },
+  infoItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    fontSize: '13px',
+    color: '#475569',
+    fontWeight: '500'
+  },
+  // Update jobCard to have a slight hover effect
+  jobCard: {
+    backgroundColor: '#fff',
+    padding: '24px',
+    borderRadius: '20px',
+    border: '1px solid #e2e8f0',
+    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+    cursor: 'default',
+    ":hover": {
+      transform: 'translateY(-4px)',
+      boxShadow: '0 12px 20px -10px rgba(0,0,0,0.1)'
+    }
+  }
 };

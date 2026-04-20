@@ -77,3 +77,45 @@ CREATE TABLE applications (
 
 -- View Table Structures
 -- SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'users';
+
+-- why we use postgresql
+
+-- We use PostgreSQL (often called Postgres) because it is widely considered the most advanced, stable, and flexible open-source relational database in the world. While many databases excel at one specific thing, Postgres is the "Swiss Army Knife" of data management.
+
+-- Here is why it is the go-to choice for modern full-stack applications like your TPO Portal:
+
+-- 1. Advanced Data Types (Beyond Rows and Columns)
+-- Unlike standard SQL databases that only handle text and numbers, Postgres allows you to store complex data.
+
+-- JSONB Support: You can store and index JSON data. This gives you the flexibility of a NoSQL database (like MongoDB) with the reliability of a Relational database.
+
+-- Geometric/GIS Data: It has native support for coordinates and maps through the PostGIS extension.
+
+-- UUIDs: As seen in your schema, Postgres handles 128-bit Universally Unique Identifiers natively and efficiently.
+
+-- 2. Extreme Data Integrity (ACID Compliance)
+-- In a placement system, data accuracy is non-negotiable. You cannot have a student "selected" for a job if the company record was deleted a second earlier.
+
+-- ACID: Postgres ensures Atomicity, Consistency, Isolation, and Durability.
+
+-- Strict Constraints: It excels at enforcing Foreign Key constraints, CHECK clauses (like your role validation), and unique indexes to prevent duplicate or corrupt data.
+
+-- 3. Reliability and "Set It and Forget It"
+-- Postgres is famous for its "rock-solid" nature. It rarely crashes, even under heavy load. It handles high concurrency—meaning hundreds of students can apply for the same job drive at the exact same millisecond without the database locking up or losing an application.
+
+-- 4. Extensibility
+-- You can add new functionality to Postgres without rewriting the core engine.
+
+-- Extensions: If you need full-text search (like Google Search for your student records), you can enable the pg_trgm extension.
+
+-- Custom Functions: You can write database logic in multiple languages, including SQL, PL/pgSQL, Python, and even JavaScript.
+
+-- 5. Performance for Complex Queries
+-- Standard databases slow down when you start joining 5 or 6 tables together. Postgres has a very sophisticated Query Planner that analyzes your SQL and finds the most efficient mathematical path to retrieve the data. This is vital for TPO admins who need to generate complex reports (e.g., "Show me all CSE students with > 8.5 CGPA who have not yet been shortlisted by any company").
+
+-- Summary Table: Postgres vs. Others
+-- Feature	PostgreSQL	MySQL / MariaDB	MongoDB
+-- Data Type	Relational + Document	Relational	Document (NoSQL)
+-- Integrity	Very Strict	Moderate	Flexible (Low)
+-- JSON Support	Native & Indexed	Limited	Primary
+-- Best For	Complex Apps, FinTech	Simple Web Apps	Rapid Prototyping

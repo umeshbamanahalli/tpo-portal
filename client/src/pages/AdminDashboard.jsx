@@ -154,7 +154,7 @@ const handleDeleteStudent = async (studentId) => {
               <tr key={i} style={s.tr}>
                 <td style={s.td}><span style={s.boldText}>{p.full_name}</span></td>
                 <td style={s.td}>{p.company_name}</td>
-                <td style={s.td}>{p.ctc || '8.5'} LPA</td>
+                <td style={s.td}>{p.ctc_package||"N/A"} LPA</td>
                 <td style={s.td}>
                    <span style={{...s.statusBadge, 
                       backgroundColor: p.status === 'Placed' ? '#dcfce7' : '#eff6ff', 

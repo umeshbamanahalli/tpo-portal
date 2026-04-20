@@ -163,4 +163,29 @@ router.put('/applications/:id/shortlist', verifyToken, async (req, res) => {
     }
 });
 
+// backend/routes/jobs.js (or similar)
+
+// Check: Are you using 'drive_id' or 'id' in the database?
+// The parameter name here (:driveId) must match req.params.driveId
+router.delete('/delete/:driveId', verifyToken, async (req, res) => {
+  const { driveId } = req.params;
+
+  try {
+    // Ensure you are targeting the correct table and column name
+    const result = await pool.query(
+      'DELETE FROM placement_drives WHERE drive_id = $1', 
+      [driveId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ msg: "Drive not found in database" });
+    }
+
+    res.json({ msg: "Drive and associated applications deleted" });
+  } catch (err) {
+    console.error("DB Delete Error:", err.message);
+    res.status(500).json({ msg: "Database error occurred" });
+  }
+});
+
 module.exports = router;

@@ -47,7 +47,8 @@ router.get('/tracking', verifyToken, async (req, res) => {
         c.company_name,
         d.job_role AS role,
         a.status,
-        a.applied_at
+        a.applied_at,
+        d.ctc_package
       FROM applications a
       JOIN students s ON a.student_id = s.student_id
       JOIN placement_drives d ON a.drive_id = d.drive_id

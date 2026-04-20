@@ -143,7 +143,13 @@ export default function CompanyDashboard() {
       )}
 
       <aside style={s.sidebar}>
-        <div style={s.logoArea}><div style={s.logoIcon}>P</div><span style={s.logoText}>PlaceNext</span></div>
+         <div style={s.logoArea}>
+          <div style={s.logoIcon}>PN</div>
+          <div>
+            <div style={s.logoText}>PlaceNext</div>
+            <div style={s.logoAdmin}>COMPANY PANEL</div>
+          </div>
+        </div>
         <nav style={s.nav}>
           <div onClick={() => setActiveTab('dashboard')} style={activeTab === 'dashboard' ? { ...s.navItem, ...s.navActive } : s.navItem}><LayoutDashboard size={20} /> My Drives</div>
           <div onClick={() => {setActiveTab('view-applicants'); setSelectedDrive(null);}} style={activeTab === 'view-applicants' ? { ...s.navItem, ...s.navActive } : s.navItem}><Users size={20} /> View Applicants</div>
@@ -330,6 +336,7 @@ const s = {
   logoArea: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '48px' },
   logoIcon: { backgroundColor: '#2563eb', color: '#fff', width: '40px', height: '40px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900', fontSize: '20px' },
   logoText: { fontSize: '22px', fontWeight: '800', color: '#0f172a', letterSpacing: '-0.5px' },
+    logoAdmin: { fontSize: '10px', color: '#3b82f6', fontWeight: '900', letterSpacing: '1px' },
   nav: { flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' },
   navItem: { display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 16px', borderRadius: '14px', color: '#64748b', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' },
   navActive: { backgroundColor: '#eff6ff', color: '#2563eb' },
