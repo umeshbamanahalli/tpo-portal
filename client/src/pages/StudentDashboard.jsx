@@ -144,20 +144,47 @@ export default function StudentDashboard() {
           )}
 
           {/* TAB 2: APPLICATIONS */}
-          {activeTab === 'applied' && (
-            <motion.div key="app" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              <h2 style={s.gridTitle}>My Career Journey</h2>
-              <div style={s.jobGrid}>
-                {applications.length > 0 ? applications.map(app => (
-                  <div key={app.application_id} style={s.jobCard}>
-                    <div style={s.jobTop}><span style={s.jobRole}>{app.job_role}</span><span style={{...s.statusBadge, backgroundColor: app.status?.toLowerCase() === 'shortlisted' ? '#dcfce7' : '#eff6ff', color: app.status?.toLowerCase() === 'shortlisted' ? '#166534' : '#3b82f6'}}>{app.status}</span></div>
-                    <p style={s.companyInfo}><MapPin size={14} /> {app.company_name}</p>
-                    <div style={s.detailRow}><span>Applied On:</span> <b>{new Date(app.applied_at).toLocaleDateString()}</b></div>
-                  </div>
-                )) : <p style={s.emptyText}>No applications yet. Start applying!</p>}
-              </div>
-            </motion.div>
-          )}
+      {activeTab === 'applied' && (
+  <motion.div key="app" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+    <h2 style={s.gridTitle}>My Career Journey</h2>
+    <div style={s.jobGrid}>
+      {applications.length > 0 ? applications.map(app => {
+        // Helper to determine status styling
+        const status = app.status?.toLowerCase();
+        let statusStyles = { bg: '#f1f5f9', text: '#475569' }; // Default
+
+        if (status === 'shortlisted') {
+          statusStyles = { bg: '#dcfce7', text: '#166534' };
+        } else if (status === 'rejected') {
+          statusStyles = { bg: '#fee2e2', text: '#991b1b' };
+        } else if (status === 'applied') {
+          statusStyles = { bg: '#eff6ff', text: '#3b82f6' };
+        }
+
+        return (
+          <div key={app.application_id} style={s.jobCard}>
+            <div style={s.jobTop}>
+              <span style={s.jobRole}>{app.job_role}</span>
+              <span style={{
+                ...s.statusBadge, 
+                backgroundColor: statusStyles.bg, 
+                color: statusStyles.text,
+                textTransform: 'capitalize'
+              }}>
+                {app.status}
+              </span>
+            </div>
+            <p style={s.companyInfo}><MapPin size={14} /> {app.company_name}</p>
+            <div style={s.detailRow}>
+              <span>Applied On:</span> 
+              <b>{new Date(app.applied_at).toLocaleDateString()}</b>
+            </div>
+          </div>
+        );
+      }) : <p style={s.emptyText}>No applications yet. Start applying!</p>}
+    </div>
+  </motion.div>
+)}
 
           {/* TAB 3: PROFILE */}
           {activeTab === 'profile' && (

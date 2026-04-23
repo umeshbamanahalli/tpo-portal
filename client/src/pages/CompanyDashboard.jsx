@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   LayoutDashboard, PlusCircle, LogOut,
-  Send, Users, BarChart3, ShieldAlert, MapPin, ChevronLeft, Trash2, Calendar, Briefcase
+  Send, Users, BarChart3, ShieldAlert, MapPin, ChevronLeft, Trash2, Calendar, Briefcase,FileText,CheckCircle2 
 } from 'lucide-react';
 
 export default function CompanyDashboard() {
@@ -229,41 +229,88 @@ export default function CompanyDashboard() {
                     <button style={s.backLink} onClick={() => setSelectedDrive(null)}><ChevronLeft size={18}/> Back to Drive List</button>
                     <div style={s.statusPill}>Total: {applicants.length}</div>
                 </div>
-                <table style={s.table}>
-                  <thead>
-                    <tr>
-                      <th style={s.th}>Student Name</th>
-                      <th style={s.th}>CGPA</th>
-                      <th style={s.th}>Status</th>
-                      <th style={s.th}>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {applicants.length === 0 ? <tr><td colSpan={4} style={s.emptyApplicantsCell}>No students have applied yet.</td></tr> : 
-                    applicants.map(app => (
-                      <tr key={app.id || app.application_id}>
-                        <td style={s.td}><div style={{fontWeight:'600'}}>{app.full_name}</div></td>
-                        <td style={s.td}>{app.cgpa}</td>
-                        <td style={s.td}>
-                           <span style={{...s.statusBadge, 
-                             backgroundColor: app.status === 'shortlisted' ? '#dcfce7' : app.status === 'rejected' ? '#fee2e2' : '#f1f5f9',
-                             color: app.status === 'shortlisted' ? '#166534' : app.status === 'rejected' ? '#991b1b' : '#475569'
-                           }}>
-                             {app.status}
-                           </span>
-                        </td>
-                        <td style={s.td}>
-                          {app.status === 'applied' ? (
-                            <div style={{display:'flex', gap:'8px'}}>
-                              <button style={s.acceptBtn} onClick={() => handleShortlistUpdate(app.id || app.application_id, 'shortlisted')}>Shortlist</button>
-                              <button style={s.rejectBtnAction} onClick={() => handleShortlistUpdate(app.id || app.application_id, 'rejected')}>Reject</button>
-                            </div>
-                          ) : <span style={{fontSize:'12px', color:'#94a3b8', fontWeight:'700'}}>PROCESSED</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div style={s.tableContainer}>
+  <table style={s.table}>
+    <thead>
+      <tr>
+        <th style={s.th}>Student Name</th>
+        <th style={s.th}>CGPA</th>
+        <th style={s.th}>Resume</th>
+        <th style={s.th}>Status</th>
+        <th style={s.th}>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {applicants.length === 0 ? (
+        <tr>
+          <td colSpan={5} style={s.emptyApplicantsCell}>
+            No students have applied yet.
+          </td>
+        </tr>
+      ) : (
+        applicants.map((app) => (
+          <tr key={app.id || app.application_id} style={s.trHover}>
+            <td style={s.td}>
+              <div style={{ fontWeight: '600', color: '#0f172a' }}>{app.full_name}</div>
+            </td>
+            <td style={s.td}>
+              <span style={s.cgpaBadge}>{app.cgpa}</span>
+            </td>
+            
+            {/* VIEW RESUME COLUMN */}
+            <td style={s.td}>
+              {app.resume_url ? (
+                <a 
+                  href={`http://localhost:5000${app.resume_url}`} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  style={s.viewResumeLink}
+                >
+                  <FileText size={16} /> View Resume
+                </a>
+              ) : (
+                <span style={s.noResumeText}>Not Uploaded</span>
+              )}
+            </td>
+
+            <td style={s.td}>
+              <span style={{
+                ...s.statusBadge, 
+                backgroundColor: app.status === 'shortlisted' ? '#dcfce7' : app.status === 'rejected' ? '#fee2e2' : '#f1f5f9',
+                color: app.status === 'shortlisted' ? '#166534' : app.status === 'rejected' ? '#991b1b' : '#475569'
+              }}>
+                {app.status.toUpperCase()}
+              </span>
+            </td>
+
+            <td style={s.td}>
+              {app.status === 'applied' ? (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button 
+                    style={s.acceptBtn} 
+                    onClick={() => handleShortlistUpdate(app.id || app.application_id, 'shortlisted')}
+                  >
+                    Shortlist
+                  </button>
+                  <button 
+                    style={s.rejectBtnAction} 
+                    onClick={() => handleShortlistUpdate(app.id || app.application_id, 'rejected')}
+                  >
+                    Reject
+                  </button>
+                </div>
+              ) : (
+                <div style={s.processedText}>
+                  <CheckCircle2 size={14} /> DECISION MADE
+                </div>
+              )}
+            </td>
+          </tr>
+        ))
+      )}
+    </tbody>
+  </table>
+</div>
               </div>
             )}
           </>
@@ -344,10 +391,10 @@ const s = {
   topHeader: { display: 'flex', justifyContent: 'space-between', marginBottom: '48px', alignItems: 'center' },
   welcome: { fontSize: '32px', fontWeight: '800', color: '#0f172a', letterSpacing: '-1px' },
   card: { backgroundColor: '#fff', padding: '40px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.04)' },
-  tableContainer: { backgroundColor: '#fff', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' },
-  table: { width: '100%', borderCollapse: 'collapse' },
-  th: { padding: '18px 24px', backgroundColor: '#f8fafc', textAlign: 'left', fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '800', letterSpacing: '1px' },
-  td: { padding: '20px 24px', borderBottom: '1px solid #f8fafc', fontSize: '14px' },
+  // tableContainer: { backgroundColor: '#fff', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' },
+  // table: { width: '100%', borderCollapse: 'collapse' },
+  // th: { padding: '18px 24px', backgroundColor: '#f8fafc', textAlign: 'left', fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '800', letterSpacing: '1px' },
+  // td: { padding: '20px 24px', borderBottom: '1px solid #f8fafc', fontSize: '14px' },
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '32px' },
   formGroup: { display: 'flex', flexDirection: 'column', gap: '10px' },
   label: { fontSize: '14px', fontWeight: '700', color: '#1e293b' },
@@ -360,5 +407,54 @@ const s = {
   statLabel: { fontSize: '14px', color: '#64748b', fontWeight: '700', marginBottom: '8px' },
   statValue: { fontSize: '40px', fontWeight: '900', color: '#0f172a', margin: 0, letterSpacing: '-1px' },
   backLink: { background: 'none', border: 'none', color: '#2563eb', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' },
-  logoutBtnHeader: { padding: '10px 20px', backgroundColor: '#fef2f2', color: '#ef4444', border: 'none', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '800', fontSize: '13px' }
+  logoutBtnHeader: { padding: '10px 20px', backgroundColor: '#fef2f2', color: '#ef4444', border: 'none', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '800', fontSize: '13px' },
+  tableContainer: {
+    backgroundColor: '#fff',
+    borderRadius: '16px',
+    border: '1px solid #e2e8f0',
+    overflow: 'hidden',
+    marginTop: '20px'
+  },
+  table: { width: '100%', borderCollapse: 'collapse' },
+  th: {
+    padding: '16px',
+    backgroundColor: '#f8fafc',
+    textAlign: 'left',
+    fontSize: '12px',
+    fontWeight: '700',
+    color: '#64748b',
+    textTransform: 'uppercase',
+    borderBottom: '1px solid #e2e8f0'
+  },
+  td: { padding: '16px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle' },
+  viewResumeLink: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '6px 12px',
+    backgroundColor: '#eff6ff',
+    color: '#2563eb',
+    borderRadius: '8px',
+    textDecoration: 'none',
+    fontSize: '13px',
+    fontWeight: '700',
+    transition: 'all 0.2s ease',
+    border: '1px solid #dbeafe'
+  },
+  cgpaBadge: {
+    backgroundColor: '#f1f5f9',
+    padding: '4px 8px',
+    borderRadius: '6px',
+    fontWeight: '700',
+    color: '#475569'
+  },
+  noResumeText: { color: '#94a3b8', fontSize: '12px', fontStyle: 'italic' },
+  processedText: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    fontSize: '11px',
+    fontWeight: '800',
+    color: '#94a3b8'
+  }
 };

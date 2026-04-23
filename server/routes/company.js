@@ -73,21 +73,24 @@ router.get('/applications', verifyToken, async (req, res) => {
         const query = `
             SELECT 
                 a.application_id,
+                a.status,
                 s.full_name,
                 s.college_id,
                 s.department,
                 s.cgpa,
+                s.resume_url,        -- Add this for the Recruiter to view
                 c.company_name,
-                a.job_role,
-                a.status
+                d.job_role           -- Pull from placement_drives table
             FROM applications a
             JOIN students s ON a.student_id = s.student_id
-            JOIN companies c ON a.company_id = c.company_id
-            ORDER BY a.created_at DESC
+            JOIN placement_drives d ON a.drive_id = d.drive_id -- Link to the drive
+            JOIN companies c ON d.company_id = c.company_id    -- Link drive to company
+            ORDER BY a.applied_at DESC
         `;
         const { rows } = await pool.query(query);
         res.json(rows);
     } catch (err) {
+        console.error("Fetch error:", err.message);
         res.status(500).send("Server Error");
     }
 });
