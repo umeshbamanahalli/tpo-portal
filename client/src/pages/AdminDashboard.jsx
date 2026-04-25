@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Users, BarChart3, LogOut, FileText, Search, Building2,
+  Users, BarChart3, LogOut, FileText, Search, Building2, UploadCloud, BellRing,
   Mail, Trash2, Download, CheckCircle, Clock, Filter, ChevronRight
 } from 'lucide-react';
 
@@ -15,6 +15,21 @@ export default function AdminDashboard() {
   const [placements, setPlacements] = useState([]);
   const [students, setStudents] = useState([]);
   const [notification, setNotification] = useState({ show: false, message: '', type: '' });
+  
+  // New states for analytics (Req 1, 2, 3)
+  const [placementStats, setPlacementStats] = useState([]);
+  // New states for bulk upload (Req 4)
+  const [selectedBulkFile, setSelectedBulkFile] = useState(null);
+  
+  // State for visibility modals
+  const [viewingEligible, setViewingEligible] = useState(null);
+  const [eligibleStudents, setEligibleStudents] = useState([]);
+
+  // New states for company-specific applicants
+  const [viewingCompanyApplicants, setViewingCompanyApplicants] = useState(null);
+  const [companyApplicants, setCompanyApplicants] = useState([]);
+
+  const [drives, setDrives] = useState([]);
 
   const branches = ["All", "CSE", "IT", "Mechanical", "Civil", "ENTC"];
 
@@ -31,26 +46,70 @@ export default function AdminDashboard() {
     try {
       const config = { headers: { 'Authorization': `Bearer ${token}` } };
       
-      const [pRes, cRes, sRes] = await Promise.all([
-        fetch('http://localhost:5000/api/admin/tracking', config),
-        fetch('http://localhost:5000/api/admin/companies', config),
-        fetch('http://localhost:5000/api/admin/students', config)
+      const [pRes, cRes, sRes, psRes, dRes] = await Promise.all([
+        fetch('http://localhost:5000/api/admin/tracking', config), // Existing
+        fetch('http://localhost:5000/api/admin/companies', config), // Existing
+        fetch('http://localhost:5000/api/admin/students', config), // Existing
+        fetch('http://localhost:5000/api/admin/analytics/placement-stats', config), // New: Req 1, 2, 3
+        fetch('http://localhost:5000/api/admin/drives', config) // To see all active drives
       ]);
 
-      const [pData, cData, sData] = await Promise.all([pRes.json(), cRes.json(), sRes.json()]);
+      // Defensive check: Ensure all responses are OK before parsing
+      const responses = [pRes, cRes, sRes, psRes, dRes];
+      const failed = responses.find(r => !r.ok);
+      if (failed) {
+          const errData = await failed.json().catch(() => ({}));
+          throw new Error(errData.msg || errData.error || "Server sync failed");
+      }
+
+      const [pData, cData, sData, psData, dData] = await Promise.all(responses.map(r => r.json()));
 
       setPlacements(Array.isArray(pData) ? pData : []);
       setCompanies(Array.isArray(cData) ? cData : []);
       setStudents(Array.isArray(sData) ? sData : []);
+      setPlacementStats(Array.isArray(psData) ? psData : []);
+      setDrives(Array.isArray(dData) ? dData : []);
     } catch (err) {
-      console.error("Fetch error:", err);
-      triggerNotification("Failed to synchronize data", "error");
+      console.error("Fetch error:", err.message);
+      triggerNotification(err.message || "Failed to synchronize data", "error");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => { fetchInitialData(); }, [fetchInitialData]);
+
+  const fetchEligibleStudents = async (driveId) => {
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`http://localhost:5000/api/admin/drives/${driveId}/eligible`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setEligibleStudents(data);
+        setViewingEligible(driveId);
+      }
+    } catch (err) {
+      triggerNotification("Failed to fetch eligibility", "error");
+    }
+  };
+
+  const fetchCompanyApplicants = async (company) => {
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`http://localhost:5000/api/admin/companies/${company.company_id}/applicants`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCompanyApplicants(data);
+        setViewingCompanyApplicants(company);
+      }
+    } catch (err) {
+      triggerNotification("Failed to fetch company applicants", "error");
+    }
+  };
 
   // --- Logic Handlers ---
   const handleApproveCompany = async (id, status) => {
@@ -116,49 +175,151 @@ const handleDeleteStudent = async (studentId) => {
     }
   };
 
-  const handleExportCSV = () => {
-    const headers = ["Name", "Email", "ID", "Branch", "CGPA"];
-    const rows = students.map(s => [s.name, s.email, s.college_id, s.department, s.cgpa]);
-    const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
-    const link = document.createElement("a");
-    link.href = encodeURI(csvContent);
-    link.download = `Placement_Report_${new Date().toLocaleDateString()}.csv`;
-    link.click();
+  // Req 16: Export Placed Students Report
+  const handleExportPlacedStudentsCSV = async () => {
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch('http://localhost:5000/api/admin/reports/placed-students', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+
+      if (data.length === 0) {
+        triggerNotification("No placed students data to export.", "info");
+        return;
+      }
+
+      const headers = ["Full Name", "College ID", "Department", "Batch", "Company Name", "Job Role", "CTC Package"];
+      const rows = data.map(s => [s.full_name, s.college_id, s.department, s.batch, s.company_name, s.job_role, s.ctc_package]);
+      const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
+      const link = document.createElement("a");
+      link.href = encodeURI(csvContent);
+      link.download = `Placed_Students_Report_${new Date().toLocaleDateString()}.csv`;
+      link.click();
+      triggerNotification("Placed students report exported successfully!", "success");
+    } catch (err) {
+      console.error("Export error:", err);
+      triggerNotification("Failed to export placed students report.", "error");
+    }
+  };
+
+  // Req 4: Bulk Upload Students
+  const handleBulkUpload = async () => {
+    if (!selectedBulkFile) {
+      triggerNotification("Please select a file to upload.", "error");
+      return;
+    }
+
+    const token = localStorage.getItem('token');
+    const formData = new FormData();
+    formData.append('file', selectedBulkFile);
+
+    try {
+      setLoading(true);
+      const res = await fetch('http://localhost:5000/api/admin/bulk-upload-students', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+      const data = await res.json();
+      triggerNotification(data.msg || "Bulk upload initiated.", "success");
+      setSelectedBulkFile(null); // Clear selected file
+    } catch (err) {
+      console.error("Bulk upload error:", err);
+      triggerNotification(err.response?.data?.msg || "Bulk upload failed.", "error");
+    } finally { setLoading(false); }
   };
 
   // --- Sub-Views ---
   const renderOverview = () => (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
       <div style={s.statsGrid}>
-        <StatCard label="Students Placed" value={placements.filter(p => p.status === 'Placed').length} icon={<CheckCircle color="#10b981"/>} />
+        <StatCard label="Offer Holders" value={placements.filter(p => p.status === 'selected').length} icon={<CheckCircle color="#10b981"/>} />
         <StatCard label="Pending Approval" value={companies.filter(c => c.status === 'pending').length} icon={<Clock color="#f59e0b"/>} />
         <StatCard label="Total Talent Pool" value={students.length} icon={<Users color="#3b82f6"/>} />
       </div>
 
+      {/* Req 5, 6: Active Drives & Eligibility Check */}
+      <div style={{...s.tableContainer, marginBottom: '32px'}}>
+        <div style={s.tableHeader}>
+          <h3 style={s.tableTitle}>Active Drives & Category Monitoring</h3>
+          <span style={{...s.livePulse, backgroundColor: '#eff6ff', color: '#3b82f6'}}>Drives: {drives.length}</span>
+        </div>
+        <table style={s.table}>
+          <thead>
+            <tr>
+              <th style={s.th}>Organization</th>
+              <th style={s.th}>Opportunity / Category</th>
+              <th style={s.th}>Min CGPA</th>
+              <th style={s.th}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {drives.map(d => (
+              <tr key={d.drive_id} style={s.tr}>
+                <td style={s.td}><div style={s.boldText}>{d.company_name}</div><div style={s.subText}>{d.job_role}</div></td>
+                <td style={s.td}>
+                   <div style={s.boldText}>{d.opportunity_type}</div>
+                   <div style={s.subText}><span style={s.branchBadge}>{d.company_category}</span></div>
+                </td>
+                <td style={s.td}><span style={s.cgpaText}>{d.min_cgpa_required}</span></td>
+                <td style={s.td}>
+                  <button onClick={() => fetchEligibleStudents(d.drive_id)} style={s.outlineBtn}>Check Eligibility</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Inline Eligibility View (Req 6) */}
+      {viewingEligible && (
+        <motion.div initial={{opacity:0}} animate={{opacity:1}} style={{...s.bulkCard, marginBottom: '32px', border: '2px solid #3b82f6'}}>
+          <div style={{display:'flex', justifyContent:'space-between', marginBottom:'20px'}}>
+            <h3 style={s.sectionTitle}>Eligible Candidates ({eligibleStudents.length})</h3>
+            <button onClick={() => setViewingEligible(null)} style={{background:'none', border:'none', cursor:'pointer'}}><Trash2 size={20} color="#94a3b8"/></button>
+          </div>
+          <div style={{maxHeight: '250px', overflowY:'auto'}}>
+            <table style={s.table}>
+               <thead><tr><th style={s.th}>Name</th><th style={s.th}>Branch</th><th style={s.th}>CGPA</th></tr></thead>
+               <tbody>
+                 {eligibleStudents.map(st => (
+                   <tr key={st.college_id} style={s.tr}><td style={s.td}>{st.full_name}</td><td style={s.td}>{st.department}</td><td style={s.td}>{st.cgpa}</td></tr>
+                 ))}
+               </tbody>
+            </table>
+          </div>
+        </motion.div>
+      )}
+
       <div style={s.tableContainer}>
         <div style={s.tableHeader}>
-          <h3 style={s.tableTitle}>Live Placement Feed</h3>
+          <h3 style={s.tableTitle}>Live Round & Selection Feed</h3>
           <span style={s.livePulse}>● Live</span>
         </div>
         <table style={s.table}>
           <thead>
             <tr>
               <th style={s.th}>Candidate</th>
-              <th style={s.th}>Organization</th>
-              <th style={s.th}>Package</th>
+              <th style={s.th}>Organization / Role</th>
+              <th style={s.th}>Interview Stage</th>
               <th style={s.th}>Status</th>
             </tr>
           </thead>
           <tbody>
             {placements.slice(0, 8).map((p, i) => (
               <tr key={i} style={s.tr}>
-                <td style={s.td}><span style={s.boldText}>{p.full_name}</span></td>
-                <td style={s.td}>{p.company_name}</td>
-                <td style={s.td}>{p.ctc_package||"N/A"} LPA</td>
+                <td style={s.td}><div style={s.boldText}>{p.full_name}</div><div style={s.subText}>{p.department}</div></td>
+                <td style={s.td}><div style={s.boldText}>{p.company_name}</div><div style={s.subText}>{p.job_role}</div></td>
+                <td style={s.td}>
+                  <div style={{...s.boldText, color: '#2563eb'}}>
+                    {p.current_round ? p.current_round : 'Application Review'}
+                  </div>
+                </td>
                 <td style={s.td}>
                    <span style={{...s.statusBadge, 
-                      backgroundColor: p.status === 'Placed' ? '#dcfce7' : '#eff6ff', 
-                      color: p.status === 'Placed' ? '#166534' : '#1e40af'}}>
+                      backgroundColor: p.status === 'selected' ? '#dcfce7' : '#eff6ff', 
+                      color: p.status === 'selected' ? '#166534' : '#1e40af'}}>
                     {p.status}
                   </span>
                 </td>
@@ -185,7 +346,7 @@ const handleDeleteStudent = async (studentId) => {
               <button key={b} onClick={() => setActiveBranch(b)} style={activeBranch === b ? s.activeBranchTab : s.branchTab}>{b}</button>
             ))}
           </div>
-          <button style={s.exportBtn} onClick={handleExportCSV}><Download size={16}/> Download Report</button>
+          <button style={s.exportBtn} onClick={handleExportPlacedStudentsCSV}><Download size={16}/> Export Placed Students</button>
         </div>
 
         <div style={s.tableContainer}>
@@ -229,6 +390,128 @@ const handleDeleteStudent = async (studentId) => {
     );
   };
 
+  // Req 1, 2, 3: Analytics View
+  const renderAnalytics = () => (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      <div style={s.analyticsHeader}>
+        <div>
+          <h2 style={s.sectionTitle}>Performance Analytics</h2>
+          <p style={s.subText}>Comparative data for last 3 recruitment seasons</p>
+        </div>
+        <div style={{display:'flex', gap: '15px'}}>
+          <StatCard label="Total Monitored" value={placementStats.reduce((a, b) => a + parseInt(b.total_students), 0)} icon={<Users size={20} color="#3b82f6"/>} />
+          <StatCard label="Placed" value={placementStats.reduce((a, b) => a + parseInt(b.placed_count), 0)} icon={<CheckCircle size={20} color="#10b981"/>} />
+        </div>
+      </div>
+
+      <div style={s.tableContainer}>
+        <table style={s.table}>
+          <thead>
+            <tr>
+              <th style={s.th}>Batch</th>
+              <th style={s.th}>Branch</th>
+              <th style={s.th}>Intake</th>
+              <th style={s.th}>Total</th>
+              <th style={s.th}>Placed</th>
+              <th style={s.th}>Placement Rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            {placementStats.length > 0 ? placementStats.map((stat, i) => (
+              <tr key={i} style={s.tr}>
+                <td style={s.td}><span style={s.boldText}>{stat.batch}</span></td>
+                <td style={s.td}><span style={s.branchBadge}>{stat.branch}</span></td>
+                <td style={s.td}>{stat.intake_type}</td>
+                <td style={s.td}>{stat.total_students}</td>
+                <td style={s.td}>
+                   <div style={s.boldText}>{stat.placed_count}</div>
+                   <div style={s.subText}>{stat.unplaced_count} unplaced</div>
+                </td>
+                <td style={s.td}>
+                  <div style={s.rateIndicator}>
+                    <div style={s.progressBarBg}>
+                      <div style={{
+                        ...s.progressBarFill, 
+                        width: `${stat.total_students > 0 ? (stat.placed_count / stat.total_students * 100) : 0}%`,
+                        backgroundColor: (stat.placed_count / stat.total_students) > 0.7 ? '#10b981' : '#f59e0b'
+                      }}></div>
+                    </div>
+                    <span style={s.boldText}>{stat.total_students > 0 ? ((stat.placed_count / stat.total_students) * 100).toFixed(1) : 0}%</span>
+                  </div>
+                </td>
+              </tr>
+            )) : (
+              <tr><td colSpan="6" style={s.td}>No analytics data available.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </motion.div>
+  );
+
+  // Req 4: Bulk Upload View
+  const renderBulkUpload = () => (
+    <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} style={s.bulkCard}>
+      <div style={s.bulkHeader}>
+        <UploadCloud size={32} color="#2563eb" />
+        <div>
+          <h2 style={s.sectionTitle}>Bulk Student Onboarding</h2>
+          <p style={s.subText}>Standardize student registration by uploading a master Excel sheet.</p>
+        </div>
+      </div>
+
+      <div style={s.uploadGrid}>
+        <div style={s.uploadInfo}>
+          <h4 style={s.smallTitle}>Data Requirements</h4>
+          <ul style={s.instructionList}>
+            <li>Accepted formats: <strong>.xlsx</strong> or <strong>.xls</strong></li>
+            <li>Column Sequence: Email, Password, Name, ID, Branch, Batch, Intake, Division, CGPA</li>
+            <li><strong>Intake Types:</strong> Regular, Lateral, or Transfer</li>
+          </ul>
+          <button onClick={() => {
+            const headers = ["email", "password", "full_name", "college_id", "department", "batch_year", "intake_type", "division", "cgpa"];
+            const csvContent = "data:text/csv;charset=utf-8," + headers.join(",");
+            const link = document.createElement("a");
+            link.href = encodeURI(csvContent);
+            link.download = "placement_student_template.csv";
+            link.click();
+          }} style={s.outlineBtn}>
+            <Download size={14} /> Download CSV Template
+          </button>
+        </div>
+
+        <div style={s.uploadAction}>
+          <div 
+            style={{
+              ...s.dropZone,
+              borderColor: selectedBulkFile ? '#2563eb' : '#e2e8f0',
+              backgroundColor: selectedBulkFile ? '#eff6ff' : '#f8fafc'
+            }}
+          >
+            <input 
+              type="file" 
+              accept=".xlsx, .xls" 
+              onChange={(e) => setSelectedBulkFile(e.target.files[0])} 
+              style={s.hiddenInput} 
+              id="bulk-file-input"
+            />
+            <label htmlFor="bulk-file-input" style={s.dropLabel}>
+              {selectedBulkFile ? (
+                <span style={s.boldText}>{selectedBulkFile.name}</span>
+              ) : (
+                <>Click to <span style={{color: '#2563eb', textDecoration: 'underline'}}>browse</span> or drag file here</>
+              )}
+            </label>
+          </div>
+          
+          <button onClick={handleBulkUpload} style={s.primaryBtn} disabled={!selectedBulkFile || loading}>
+             {loading ? "Processing Records..." : "Process Bulk Upload"}
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+
   return (
     <div style={s.pageWrapper}>
       <AnimatePresence>
@@ -260,6 +543,8 @@ const handleDeleteStudent = async (studentId) => {
           <NavItem active={activeTab === 'overview'} icon={<BarChart3 size={20}/>} label="Overview" onClick={() => setActiveTab('overview')} />
           <NavItem active={activeTab === 'companies'} icon={<Building2 size={20}/>} label="Corporate Partners" onClick={() => setActiveTab('companies')} />
           <NavItem active={activeTab === 'students'} icon={<Users size={20}/>} label="Student Records" onClick={() => setActiveTab('students')} />
+          <NavItem active={activeTab === 'analytics'} icon={<BarChart3 size={20}/>} label="Analytics" onClick={() => setActiveTab('analytics')} />
+          <NavItem active={activeTab === 'bulk-upload'} icon={<UploadCloud size={20}/>} label="Bulk Upload" onClick={() => setActiveTab('bulk-upload')} />
         </nav>
 
         <button style={s.logoutBtn} onClick={() => { localStorage.clear(); window.location.href='/login'; }}>
@@ -285,7 +570,10 @@ const handleDeleteStudent = async (studentId) => {
           <>
             {activeTab === 'overview' && renderOverview()}
             {activeTab === 'students' && renderStudents()}
+            {activeTab === 'analytics' && renderAnalytics()}
+            {activeTab === 'bulk-upload' && renderBulkUpload()}
             {activeTab === 'companies' && (
+              <>
                <div style={s.tableContainer}>
                 <div style={s.tableHeader}><h3 style={s.tableTitle}>Partner Companies</h3></div>
                 <table style={s.table}>
@@ -315,6 +603,11 @@ const handleDeleteStudent = async (studentId) => {
                                             <button onClick={() => handleApproveCompany(c.company_id, 'approved')} style={s.approveBtn}>Verify</button>
                                         )}
                                         <button 
+                                          style={s.approveBtn} 
+                                          onClick={() => fetchCompanyApplicants(c)}
+                                          title="View Applicants"
+                                        >Applicants</button>
+                                        <button 
                                           style={s.deleteBtn} 
                                           onClick={() => handleDeleteCompany(c.company_id)}
                                           title="Remove Company"
@@ -328,6 +621,38 @@ const handleDeleteStudent = async (studentId) => {
                     </tbody>
                 </table>
                </div>
+
+               {viewingCompanyApplicants && (
+                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} style={{...s.bulkCard, marginTop: '30px', border: '2px solid #3b82f6'}}>
+                    <div style={{display:'flex', justifyContent:'space-between', marginBottom:'20px'}}>
+                      <h3 style={s.sectionTitle}>Applicants for {viewingCompanyApplicants.company_name}</h3>
+                      <button onClick={() => setViewingCompanyApplicants(null)} style={{background:'none', border:'none', cursor:'pointer'}}><Trash2 size={20} color="#94a3b8"/></button>
+                    </div>
+                    <div style={{maxHeight: '400px', overflowY:'auto'}}>
+                      <table style={s.table}>
+                        <thead>
+                          <tr>
+                            <th style={s.th}>Student</th>
+                            <th style={s.th}>Applied For</th>
+                            <th style={s.th}>CGPA</th>
+                            <th style={s.th}>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {companyApplicants.length > 0 ? companyApplicants.map((app, idx) => (
+                            <tr key={idx} style={s.tr}>
+                              <td style={s.td}><div style={s.boldText}>{app.full_name}</div><div style={s.subText}>{app.department}</div></td>
+                              <td style={s.td}><div style={s.boldText}>{app.job_role}</div></td>
+                              <td style={s.td}>{app.cgpa}</td>
+                              <td style={s.td}><span style={{...s.statusBadge, backgroundColor: app.status === 'selected' ? '#dcfce7' : '#eff6ff', color: app.status === 'selected' ? '#166534' : '#1e40af'}}>{app.status.toUpperCase()}</span></td>
+                            </tr>
+                          )) : <tr><td colSpan="4" style={{...s.td, textAlign: 'center'}}>No applicants found for this company.</td></tr>}
+                        </tbody>
+                      </table>
+                    </div>
+                 </motion.div>
+               )}
+              </>
             )}
           </>
         )}
@@ -405,4 +730,31 @@ const s = {
   deleteBtn: { backgroundColor: '#fef2f2', color: '#dc2626', border: 'none', padding: '8px', borderRadius: '10px', cursor: 'pointer', transition: '0.2s' },
   loadingArea: { textAlign: 'center', padding: '100px 0', color: '#64748b', fontWeight: '700' },
   notification: { position: 'fixed', top: '20px', right: '20px', padding: '16px 24px', color: '#fff', borderRadius: '16px', zIndex: 1000, fontWeight: '700', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' },
+  sectionTitle: { fontSize: '24px', fontWeight: '800', margin: '0 0 20px 0', color: '#1e293b' },
+  fileInput: { padding: '12px', border: '1px solid #e2e8f0', borderRadius: '12px', width: '100%', backgroundColor: '#f8fafc' },
+  selectedFileText: { marginTop: '10px', fontSize: '14px', color: '#475569' },
+  primaryBtn: { backgroundColor: '#2563eb', color: '#fff', padding: '14px 24px', borderRadius: '14px', border: 'none', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', marginTop: '20px' },
+  formGroup: { display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' },
+  label: { fontSize: '14px', fontWeight: '700', color: '#475569' },
+  
+  bulkCard: { backgroundColor: '#fff', padding: '40px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' },
+  bulkHeader: { display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '32px' },
+  uploadGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '40px' },
+  smallTitle: { fontSize: '14px', fontWeight: '800', textTransform: 'uppercase', color: '#64748b', letterSpacing: '0.5px', marginBottom: '16px' },
+  instructionList: { padding: '0 0 0 18px', margin: '0 0 24px 0', fontSize: '14px', color: '#475569', lineHeight: '1.8' },
+  outlineBtn: { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: '#fff', color: '#1e293b', fontWeight: '700', cursor: 'pointer', fontSize: '13px' },
+  dropZone: { border: '2px dashed', borderRadius: '16px', padding: '40px', textAlign: 'center', cursor: 'pointer', transition: '0.2s' },
+  hiddenInput: { display: 'none' },
+  dropLabel: { cursor: 'pointer', fontSize: '14px', color: '#64748b' },
+  uploadAction: { display: 'flex', flexDirection: 'column', justifyContent: 'center' },
+
+  analyticsgressItem: { display: 'flex', flexDirection: 'column', gap: '8px' },
+  progressBarBg: { width: '100%', height: '10px', backgroundColor: '#f1f5f9', borderRadius: '10px', overflow: 'hidden' },
+  progressBarFill: { height: '100%', borderRadius: '10px' },
+  intakeGrid: { display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginTop: '10px' },
+  intakeBox: { padding: '20px', backgroundColor: '#f8fafc', borderRadius: '16px', border: '1px solid #f1f5f9' },
+  intakeLabel: { fontSize: '13px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' },
+  intakeValue: { fontSize: '24px', fontWeight: '900', color: '#1e293b' },
+  analyticsHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  rateIndicator: { display: 'flex', alignItems: 'center', gap: '12px', width: '180px' }
 };

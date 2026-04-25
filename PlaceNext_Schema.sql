@@ -25,7 +25,11 @@ CREATE TABLE students (
     full_name VARCHAR(255) NOT NULL,
     college_id VARCHAR(50) UNIQUE NOT NULL,
     department VARCHAR(100),
+    batch_year INT DEFAULT 2026,
+    intake_type VARCHAR(50) CHECK (intake_type IN ('Regular', 'Lateral', 'Transfer')),
+    division VARCHAR(10) DEFAULT 'A',
     cgpa DECIMAL(4,2) DEFAULT 0.00,
+    placement_status VARCHAR(20) DEFAULT 'unplaced' CHECK (placement_status IN ('unplaced', 'placed', 'interned')),
     resume_url TEXT
 );
 
@@ -44,10 +48,14 @@ CREATE TABLE placement_drives (
     drive_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     company_id UUID REFERENCES companies(company_id) ON DELETE CASCADE,
     job_role VARCHAR(255) NOT NULL,
+    opportunity_type VARCHAR(20) DEFAULT 'Placement' CHECK (opportunity_type IN ('Placement', 'Internship', 'Training')),
+    company_category VARCHAR(50) DEFAULT 'Service' CHECK (company_category IN ('Product', 'Service', 'Startup', 'MNC')),
     min_cgpa_required DECIMAL(4,2) NOT NULL,
     ctc_package DECIMAL(10,2), -- In LPA
     location VARCHAR(255) DEFAULT 'On-Campus',
     deadline DATE NOT NULL,
+    interview_rounds JSONB, -- Stores round details like [{"name": "Aptitude", "order": 1}]
+    interview_material_url TEXT, -- Link to preparation materials
     status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'closed', 'completed')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -58,9 +66,63 @@ CREATE TABLE applications (
     drive_id UUID REFERENCES placement_drives(drive_id) ON DELETE CASCADE,
     student_id UUID REFERENCES students(student_id) ON DELETE CASCADE,
     status VARCHAR(20) DEFAULT 'applied' CHECK (status IN ('applied', 'shortlisted', 'rejected', 'selected')),
+    current_round_index INT DEFAULT 0,
     shortlist_status VARCHAR(20) DEFAULT 'Pending',
     applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(drive_id, student_id) -- Prevents duplicate applications
+);
+
+-- 7. Define the rounds for a specific company drive
+CREATE TABLE IF NOT EXISTS drive_rounds (
+    round_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    drive_id UUID REFERENCES placement_drives(drive_id) ON DELETE CASCADE,
+    round_number INT NOT NULL,
+    round_name VARCHAR(100) NOT NULL,
+    round_date DATE,
+    UNIQUE(drive_id, round_number)
+);
+
+-- 8. Track student progress through rounds
+CREATE TABLE IF NOT EXISTS student_round_status (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    application_id UUID REFERENCES applications(application_id) ON DELETE CASCADE,
+    round_id UUID REFERENCES drive_rounds(round_id) ON DELETE CASCADE,
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'cleared', 'rejected')),
+    remarks TEXT,
+    UNIQUE(application_id, round_id)
+);
+
+-- 9. Training and Calendar Sessions
+CREATE TABLE IF NOT EXISTS training_sessions (
+    session_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(255) NOT NULL,
+    trainer_name VARCHAR(255),
+    start_time TIMESTAMP NOT NULL,
+    end_time TIMESTAMP NOT NULL,
+    meeting_link TEXT,
+    recording_url TEXT,
+    resource_url TEXT,
+    department_eligibility VARCHAR(100)
+);
+
+-- 10. Academic Certifications Tracking
+CREATE TABLE academic_certifications (
+    cert_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_id UUID REFERENCES students(student_id) ON DELETE CASCADE,
+    cert_name VARCHAR(255) NOT NULL,
+    issuing_org VARCHAR(255),
+    issue_date DATE,
+    cert_url TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 8. Notifications Table (Requirement 17)
+CREATE TABLE notifications (
+    notification_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    message TEXT NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ======================================================

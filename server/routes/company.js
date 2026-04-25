@@ -39,6 +39,30 @@ router.post('/create-drive', verifyToken, async (req, res) => {
   }
 });
 
+// @route   GET /api/company/eligible-students/:driveId
+// @desc    Req 6: Show students who meet CGPA but haven't applied
+router.get('/eligible-students/:driveId', verifyToken, async (req, res) => {
+    try {
+        const drive = await pool.query('SELECT min_cgpa_required FROM placement_drives WHERE drive_id = $1', [req.params.driveId]);
+        if (drive.rowCount === 0) return res.status(404).json({ msg: "Drive not found" });
+
+        const minCgpa = drive.rows[0].min_cgpa_required;
+        const result = await pool.query(`
+            SELECT s.full_name, s.cgpa, u.email, s.department
+            FROM students s
+            JOIN users u ON s.student_id = u.user_id
+            WHERE s.cgpa >= $1
+            AND s.student_id NOT IN (
+                SELECT student_id FROM applications WHERE drive_id = $2
+            )
+        `, [minCgpa, req.params.driveId]);
+        
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).send("Server Error");
+    }
+});
+
 // GET: Fetch all jobs
 router.get('/api/jobs', async (req, res) => {
   try {
@@ -93,6 +117,19 @@ router.get('/applications', verifyToken, async (req, res) => {
         console.error("Fetch error:", err.message);
         res.status(500).send("Server Error");
     }
+});
+
+// @route   PUT /api/company/applications/:id/next-round
+// @desc    Req 7: Advance student to next interview round
+router.put('/applications/:id/next-round', verifyToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'company') return res.status(403).json({ msg: "Access denied" });
+        await pool.query(
+            'UPDATE applications SET current_round_index = current_round_index + 1 WHERE application_id = $1',
+            [req.params.id]
+        );
+        res.json({ msg: "Student moved to next round" });
+    } catch (err) { res.status(500).send("Server Error"); }
 });
 
 // Shortlist logic

@@ -5,183 +5,175 @@ const verifyToken = require('../middleware/verifyToken');
 const multer = require('multer');
 const path = require('path');
 
-// --- Multer Setup for Resume Uploads ---
+// --- Multer Setup ---
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, 'uploads/resumes/'),
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'resume-' + uniqueSuffix + path.extname(file.originalname));
-  }
+    destination: (req, file, cb) => {
+        const folder = file.fieldname === 'resume' ? 'uploads/resumes/' : 'uploads/bulk/';
+        cb(null, folder);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    }
 });
+
 const upload = multer({ 
-  storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB Limit
-  fileFilter: (req, file, cb) => {
-    const allowedExt = new Set(['.pdf', '.doc', '.docx']);
-    const ext = path.extname(file.originalname || '').toLowerCase();
-    if (!allowedExt.has(ext)) {
-      return cb(new Error('Only PDF, DOC, DOCX files are allowed'));
+    storage: storage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        const allowedExt = new Set(['.pdf', '.doc', '.docx', '.xlsx', '.csv']);
+        const ext = path.extname(file.originalname || '').toLowerCase();
+        if (!allowedExt.has(ext)) return cb(new Error('File type not supported'));
+        cb(null, true);
     }
-    cb(null, true);
-  }
 });
 
-// @route   GET /api/student/profile
+// --- 1. PROFILE MANAGEMENT ---
+
 router.get('/profile', verifyToken, async (req, res) => {
-  try {
-    const studentQuery = await pool.query(
-      `SELECT s.full_name, s.college_id, s.department, s.cgpa, s.resume_url, u.email 
-       FROM students s 
-       JOIN users u ON s.student_id = u.user_id 
-       WHERE s.student_id = $1`,
-      [req.user.id]
-    );
-    res.json(studentQuery.rows[0]);
-  } catch (err) {
-    res.status(500).send("Server Error");
-  }
+    try {
+        const result = await pool.query(
+            `SELECT s.*, u.email FROM students s 
+             JOIN users u ON s.student_id = u.user_id WHERE s.student_id = $1`,
+            [req.user.id]
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).send("Server Error");
+    }
 });
 
-// @route   PUT /api/student/update-profile
-// Uses upload.single('resume') to handle the file picker from frontend
 router.put('/update-profile', verifyToken, upload.single('resume'), async (req, res) => {
-  const { full_name, department, cgpa } = req.body;
-  const student_id = req.user.id;
-  
-  // If a file was uploaded, use the new path, otherwise keep existing link
-  let resume_url = req.body.resume_url; 
-  if (req.file) {
-    resume_url = `/uploads/resumes/${req.file.filename}`;
-  }
+    const { full_name, department, cgpa, batch_year, division, intake_type } = req.body;
+    let resume_url = req.body.resume_url; 
+    if (req.file) resume_url = `/uploads/resumes/${req.file.filename}`;
 
-  try {
-    await pool.query(
-      `UPDATE students 
-       SET full_name = $1, department = $2, cgpa = $3, resume_url = $4 
-       WHERE student_id = $5`,
-      [full_name, department, cgpa, resume_url, student_id]
-    );
-    res.json({ msg: "Profile updated successfully" });
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send("Server Error");
-  }
+    try {
+        await pool.query(
+            `UPDATE students SET full_name = $1, department = $2, cgpa = $3, 
+             resume_url = $4, batch_year = $5, division = $6, intake_type = $7 WHERE student_id = $8`,
+            [full_name, department, cgpa, resume_url, batch_year, division, intake_type, req.user.id]
+        );
+        res.json({ msg: "Profile updated successfully" });
+    } catch (err) {
+        res.status(500).send("Server Error");
+    }
 });
 
-router.use((err, req, res, next) => {
-  if (err && err.message && err.message.includes('Only PDF, DOC, DOCX')) {
-    return res.status(400).json({ msg: err.message });
-  }
-  return next(err);
-});
+// --- 2. DRIVES & ELIGIBILITY (Req 5, 6, 8, 10) ---
 
-// @route   GET /api/student/drives
-// This fetches the actual job openings
 router.get("/drives", verifyToken, async (req, res) => {
-  if (req.user.role !== 'student') {
-    return res.status(403).json({ msg: "Only students can view drives" });
-  }
+    const { type } = req.query; // 'Placement', 'Internship', 'Training'
+    let filter = "WHERE d.status = 'active' AND d.deadline >= CURRENT_DATE";
+    if (type) filter += ` AND d.opportunity_type = '${type}'`;
 
-  try {
-    const drives = await pool.query(
-      `SELECT d.*, COALESCE(c.company_name, 'Confidential Company') AS company_name
-       FROM placement_drives d
-       LEFT JOIN companies c ON d.company_id = c.company_id
-       WHERE d.status = 'active'
-         AND d.deadline >= CURRENT_DATE
-       ORDER BY d.deadline ASC`
-    );
-    res.json(drives.rows); // Return all rows, not just [0]
-  } catch (err) {
-    console.error("Student drives fetch error:", err.message);
-    res.status(500).send("Server Error");
-  }
+    try {
+        const drives = await pool.query(
+            `SELECT d.*, c.company_name,
+                (CASE WHEN s.cgpa >= d.min_cgpa_required THEN true ELSE false END) as is_eligible
+             FROM placement_drives d
+             LEFT JOIN companies c ON d.company_id = c.company_id
+             CROSS JOIN students s
+             WHERE s.student_id = $1 ${filter.replace('WHERE', 'AND')}
+             ORDER BY d.deadline ASC`,
+            [req.user.id]
+        );
+        res.json(drives.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send("Server Error");
+    }
 });
 
-// @route   GET /api/student/my-applications
-// @desc    Fetch applications submitted by logged-in student
-router.get('/my-applications', verifyToken, async (req, res) => {
-  if (req.user.role !== 'student') {
-    return res.status(403).json({ msg: "Only students can view applications" });
-  }
+// --- 3. APPLICATION & ROUND TRACKING (Req 7, 12) ---
 
-  try {
-    const result = await pool.query(
-      `SELECT
-          a.application_id,
-          a.drive_id,
-          a.status,
-          a.applied_at,
-          d.job_role,
-          d.ctc_package,
-          d.deadline,
-          COALESCE(c.company_name, 'Confidential Company') AS company_name
-       FROM applications a
-       JOIN placement_drives d ON a.drive_id = d.drive_id
-       LEFT JOIN companies c ON d.company_id = c.company_id
-       WHERE a.student_id = $1
-       ORDER BY a.applied_at DESC`,
-      [req.user.id]
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error("Student applications fetch error:", err.message);
-    res.status(500).json({ msg: "Failed to load applications" });
-  }
-});
-
-// @route   POST /api/student/apply
 router.post('/apply', verifyToken, async (req, res) => {
-  const { drive_id } = req.body; 
-  const student_id = req.user.id;
+    const { drive_id } = req.body;
+    const student_id = req.user.id;
 
-  try {
-    if (req.user.role !== 'student') {
-      return res.status(403).json({ msg: "Only students can apply for drives" });
+    try {
+        // Eligibility Check before Insert
+        const check = await pool.query(
+            `SELECT (s.cgpa >= d.min_cgpa_required) as eligible 
+             FROM students s, placement_drives d 
+             WHERE s.student_id = $1 AND d.drive_id = $2`,
+            [student_id, drive_id]
+        );
+
+        if (!check.rows[0]?.eligible) {
+            return res.status(403).json({ msg: "You do not meet the minimum CGPA for this drive" });
+        }
+
+        await pool.query(
+            'INSERT INTO applications (drive_id, student_id, status) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+            [drive_id, student_id, 'applied']
+        );
+        res.status(201).json({ msg: "Applied successfully!" });
+    } catch (err) {
+        res.status(500).json({ error: "Database error" });
     }
-    if (!drive_id) {
-      return res.status(400).json({ msg: "Drive id is required" });
-    }
-
-    const studentExists = await pool.query(
-      'SELECT 1 FROM students WHERE student_id = $1',
-      [student_id]
-    );
-    if (studentExists.rows.length === 0) {
-      return res.status(403).json({ msg: "Student profile not found for this account" });
-    }
-
-    const driveExists = await pool.query(
-      `SELECT 1
-       FROM placement_drives
-       WHERE drive_id = $1 AND status = 'active' AND deadline >= CURRENT_DATE`,
-      [drive_id]
-    );
-    if (driveExists.rows.length === 0) {
-      return res.status(404).json({ msg: "Drive not found or no longer active" });
-    }
-
-    // 1. Check if already applied in the applications table
-    const alreadyApplied = await pool.query(
-      'SELECT * FROM applications WHERE drive_id = $1 AND student_id = $2',
-      [drive_id, student_id]
-    );
-
-    if (alreadyApplied.rows.length > 0) {
-      return res.status(400).json({ msg: "Already applied!" });
-    }
-
-    // 2. Insert into applications table
-    await pool.query(
-      'INSERT INTO applications (drive_id, student_id, status) VALUES ($1, $2, $3)',
-      [drive_id, student_id, 'applied']
-    );
-
-    res.status(201).json({ msg: "Applied successfully!" });
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ error: "Database error" });
-  }
 });
+
+router.get('/my-applications', verifyToken, async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT a.application_id, a.drive_id, a.status as overall_status, a.applied_at,
+                    d.job_role, d.opportunity_type, d.ctc_package, c.company_name, d.company_category,
+                    r.round_name as current_round
+             FROM applications a
+             JOIN placement_drives d ON a.drive_id = d.drive_id
+             JOIN companies c ON d.company_id = c.company_id
+             LEFT JOIN LATERAL (
+                SELECT dr.round_name FROM student_round_status srs
+                JOIN drive_rounds dr ON srs.round_id = dr.round_id
+                WHERE srs.application_id = a.application_id
+                ORDER BY dr.round_number DESC LIMIT 1
+             ) r ON true
+             WHERE a.student_id = $1`,
+            [req.user.id]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).send("Server Error");
+    }
+});
+
+// --- 4. TRAINING SESSIONS (Req 11) ---
+
+router.get('/training', verifyToken, async (req, res) => {
+    try {
+        const studentDept = await pool.query('SELECT department FROM students WHERE student_id = $1', [req.user.id]);
+        const dept = studentDept.rows[0]?.department || 'None';
+
+        const result = await pool.query(
+            `SELECT * FROM training_sessions 
+             WHERE department_eligibility = 'All' OR department_eligibility = $1
+             ORDER BY start_time ASC`,
+            [dept]
+        );
+        res.json(result.rows);
+    } catch (err) { res.status(500).send("Server Error"); }
+});
+
+// --- 4. ACADEMIC CERTIFICATIONS (Req 9) ---
+
+router.get('/certifications', verifyToken, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM academic_certifications WHERE student_id = $1', [req.user.id]);
+        res.json(result.rows);
+    } catch (err) { res.status(500).send("Server Error"); }
+});
+
+router.post('/certifications', verifyToken, async (req, res) => {
+    const { cert_name, issuing_org, issue_date, cert_url } = req.body;
+    try {
+        await pool.query(
+            'INSERT INTO academic_certifications (student_id, cert_name, issuing_org, issue_date, cert_url) VALUES ($1, $2, $3, $4, $5)',
+            [req.user.id, cert_name, issuing_org, issue_date, cert_url]
+        );
+        res.json({ msg: "Certification added successfully" });
+    } catch (err) { res.status(500).send("Server Error"); }
+});
+
 
 module.exports = router;

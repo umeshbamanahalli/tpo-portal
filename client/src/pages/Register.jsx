@@ -30,7 +30,7 @@ const Toast = ({ message, type, onClose }) => {
 export default function Register() {
     const [formData, setFormData] = useState({
         email: "", password: "", role: "student",
-        name: "", college_id: "", department: "", cgpa: "",
+        name: "", college_id: "", department: "", cgpa: "", intake_type: "Regular",
         website: ""
     });
 
@@ -167,6 +167,14 @@ export default function Register() {
                                     <label style={s.label}>CGPA</label>
                                     <input name="cgpa" type="number" step="0.01" placeholder="0.00" style={{ ...s.inputNoIcon, borderColor: errors.cgpa ? '#ef4444' : '#e2e8f0' }} onChange={handleChange} />
                                 </div>
+                            </div>
+                            <div style={s.inputContainer}>
+                                <label style={s.label}>Intake Type</label>
+                                <select name="intake_type" style={s.inputNoIcon} onChange={handleChange} value={formData.intake_type}>
+                                    <option value="Regular">Regular</option>
+                                    <option value="Lateral">Lateral</option>
+                                    <option value="Transfer">Transfer</option>
+                                </select>
                             </div>
                         </motion.div>
                     )}

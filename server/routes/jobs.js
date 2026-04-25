@@ -11,20 +11,29 @@ router.post('/add', verifyToken, async (req, res) => {
         return res.status(403).json({ msg: "Only companies can post jobs" });
     }
 
-    const { job_role, ctc_package, min_cgpa_required, deadline, location } = req.body;
+    const { 
+        job_role, 
+        ctc_package, 
+        min_cgpa_required, 
+        deadline, 
+        location,
+        opportunity_type,
+        company_category,
+        interview_material_url
+    } = req.body;
     const company_id = req.user.id; 
 
     try {
         const newDrive = await pool.query(
-            // Count: 1:company_id, 2:job_role, 3:min_cgpa, 4:ctc, 5:deadline, 6:status, 7:location
-            `INSERT INTO placement_drives (company_id, job_role, min_cgpa_required, ctc_package, deadline, status, location) 
-             VALUES ($1::uuid, $2, $3, $4, $5, 'active', $6) RETURNING *`, 
-             // Added $6 above ^
-            [company_id, job_role, min_cgpa_required, ctc_package, deadline, location]
+            `INSERT INTO placement_drives 
+             (company_id, job_role, min_cgpa_required, ctc_package, deadline, status, location, opportunity_type, company_category, interview_material_url) 
+             VALUES ($1::uuid, $2, $3, $4, $5, 'active', $6, $7, $8, $9) 
+             RETURNING *`, 
+            [company_id, job_role, min_cgpa_required, ctc_package, deadline, location, opportunity_type, company_category, interview_material_url]
         );
         res.status(201).json({ msg: "Drive posted successfully", drive: newDrive.rows[0] });
     } catch (err) {
-        console.error("SQL Error:", err.message);
+        console.error("POST /add job Error:", err);
         res.status(500).json({ error: "Database Error" });
     }
 });
@@ -46,7 +55,7 @@ router.get('/my-jobs', verifyToken, async (req, res) => {
         );
         res.json(drives.rows);
     } catch (err) {
-        console.error("My drives fetch error:", err.message);
+        console.error("GET /my-jobs Error:", err);
         res.status(500).send("Server Error");
     }
 });
@@ -75,7 +84,7 @@ router.get('/company-stats', verifyToken, async (req, res) => {
       total_applications: Number(stats.rows[0].total_applications),
       total_shortlisted: Number(stats.rows[0].total_shortlisted)
     });
-  } catch (err) {
+  } catch (err) { // Existing console.error is good here
     console.error("Analytics Error:", err.message);
     res.status(500).send("Server Error");
   }
@@ -107,7 +116,7 @@ router.get('/applicants/:driveId', verifyToken, async (req, res) => {
 
     const result = await pool.query(query, [driveId]);
     res.json(result.rows);
-  } catch (err) {
+  } catch (err) { // Existing console.error is good here
     console.error("Applicants fetch error:", err.message);
     res.status(500).json({ error: "Server error fetching applicants" });
   }
@@ -134,7 +143,7 @@ router.get('/all-applications', verifyToken, async (req, res) => {
     `;
     const result = await pool.query(query, [companyId]);
     res.json(result.rows);
-  } catch (err) {
+  } catch (err) { // Existing console.error is good here
     console.error(err.message);
     res.status(500).json({ error: "Server error fetching all applications" });
   }
@@ -156,9 +165,17 @@ router.put('/applications/:id/shortlist', verifyToken, async (req, res) => {
             return res.status(404).json({ msg: "Application not found" });
         }
 
+        // Req 8: Automatically notify student of status update
+        if (status === 'shortlisted' || status === 'selected') {
+            await pool.query(
+                'INSERT INTO notifications (user_id, message) VALUES ($1, $2)',
+                [result.rows[0].student_id, `Update: You have been ${status} for the ${req.body.job_role || 'requested'} drive.`]
+            );
+        }
+
         res.json({ msg: "Status updated", data: result.rows[0] });
     } catch (err) {
-        console.error("SQL Error:", err.message);
+        console.error("PUT /applications/:id/shortlist Error:", err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -180,9 +197,8 @@ router.delete('/delete/:driveId', verifyToken, async (req, res) => {
     if (result.rowCount === 0) {
       return res.status(404).json({ msg: "Drive not found in database" });
     }
-
     res.json({ msg: "Drive and associated applications deleted" });
-  } catch (err) {
+  } catch (err) { // Existing console.error is good here
     console.error("DB Delete Error:", err.message);
     res.status(500).json({ msg: "Database error occurred" });
   }

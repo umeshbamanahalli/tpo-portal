@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, PlusCircle, LogOut,
   Send, Users, BarChart3, ShieldAlert, MapPin, ChevronLeft, Trash2, Calendar, Briefcase,FileText,CheckCircle2 
@@ -19,7 +20,10 @@ export default function CompanyDashboard() {
     ctc_package: '',
     min_cgpa_required: '',
     deadline: '',
-    location: ''
+    location: '',
+    opportunity_type: 'Placement',
+    company_category: 'Service',
+    interview_material_url: ''
   });
 
   const triggerNotification = (message, type) => {
@@ -103,7 +107,16 @@ export default function CompanyDashboard() {
       });
       if (response.ok) {
         triggerNotification("Drive posted successfully!", "success");
-        setNewJob({ job_role: '', ctc_package: '', min_cgpa_required: '', deadline: '', location: '' });
+        setNewJob({ 
+          job_role: '', 
+          ctc_package: '', 
+          min_cgpa_required: '', 
+          deadline: '', 
+          location: '',
+          opportunity_type: 'Placement',
+          company_category: 'Service',
+          interview_material_url: ''
+        });
         fetchMyJobs();
         setActiveTab('dashboard');
       }
@@ -185,6 +198,10 @@ export default function CompanyDashboard() {
                     <td style={s.td}>
                       <div style={{fontWeight: '700', color: '#0f172a'}}>{drive.job_role}</div>
                       <div style={{fontSize: '12px', color: '#64748b', display:'flex', alignItems:'center', gap:'4px'}}><MapPin size={12}/>{drive.location || 'N/A'}</div>
+                      <div style={{marginTop: '4px'}}>
+                        <span style={s.typeTag}>{drive.opportunity_type}</span>
+                        <span style={s.categoryTag}>{drive.company_category}</span>
+                      </div>
                     </td>
                     <td style={s.td}>
                       <div style={s.infoRow}><span style={s.badgeLabel}>CTC</span> {drive.ctc_package} LPA</div>
@@ -320,16 +337,42 @@ export default function CompanyDashboard() {
           <div style={s.card}>
             <form onSubmit={handlePostJob}>
               <div style={s.formGrid}>
+                {/* Priority Selection: Opportunity Type determines the form context */}
+                <div style={{ ...s.formGroup, gridColumn: '1 / -1', marginBottom: '10px' }}>
+                  <label style={s.label}>Opportunity Type</label>
+                  <select 
+                    style={{ ...s.inputField, backgroundColor: '#f0f9ff', borderColor: '#3b82f6' }} 
+                    value={newJob.opportunity_type} 
+                    onChange={e => setNewJob({...newJob, opportunity_type: e.target.value})}
+                  >
+                    <option value="Placement">Placement (Full-Time Role)</option>
+                    <option value="Internship">Internship Program</option>
+                    <option value="Training">Training / Certification</option>
+                  </select>
+                </div>
+
                 <div style={s.formGroup}>
-                  <label style={s.label}>Job Role</label>
-                  <input required style={s.inputField} value={newJob.job_role} onChange={e => setNewJob({...newJob, job_role: e.target.value})} placeholder="e.g. Senior Product Designer" />
+                  <label style={s.label}>
+                    {newJob.opportunity_type === 'Training' ? 'Program / Course Name' : 
+                     newJob.opportunity_type === 'Internship' ? 'Internship Role' : 'Job Role'}
+                  </label>
+                  <input 
+                    required 
+                    style={s.inputField} 
+                    value={newJob.job_role} 
+                    onChange={e => setNewJob({...newJob, job_role: e.target.value})} 
+                    placeholder={newJob.opportunity_type === 'Training' ? "e.g. Full Stack Development BootCamp" : "e.g. Senior Product Designer"} 
+                  />
                 </div>
                 <div style={s.formGroup}>
                   <label style={s.label}>Work Location</label>
                   <input required style={s.inputField} value={newJob.location} onChange={e => setNewJob({...newJob, location: e.target.value})} placeholder="e.g. Pune (Office) / Remote" />
                 </div>
                 <div style={s.formGroup}>
-                  <label style={s.label}>CTC (Annual LPA)</label>
+                  <label style={s.label}>
+                    {newJob.opportunity_type === 'Placement' ? 'CTC (Annual LPA)' : 
+                     newJob.opportunity_type === 'Internship' ? 'Monthly Stipend (in ₹)' : 'Program Fee / Stipend (if any)'}
+                  </label>
                   <input required type="number" step="0.1" style={s.inputField} value={newJob.ctc_package} onChange={e => setNewJob({...newJob, ctc_package: e.target.value})} />
                 </div>
                 <div style={s.formGroup}>
@@ -340,6 +383,28 @@ export default function CompanyDashboard() {
                   <label style={s.label}>Application Deadline</label>
                   <input required type="date" style={s.inputField} value={newJob.deadline} onChange={e => setNewJob({...newJob, deadline: e.target.value})} />
                 </div>
+                {newJob.opportunity_type !== 'Training' && (
+                  <div style={s.formGroup}>
+                    <label style={s.label}>Company Category</label>
+                    <select style={s.inputField} value={newJob.company_category} onChange={e => setNewJob({...newJob, company_category: e.target.value})}>
+                      <option value="Product">Product</option>
+                      <option value="Service">Service</option>
+                      <option value="Startup">Startup</option>
+                      <option value="MNC">MNC</option>
+                    </select>
+                  </div>
+                )}
+                <div style={s.formGroup}>
+                  <label style={s.label}>
+                    {newJob.opportunity_type === 'Training' ? 'Course Brochure / Syllabus Link' : 'Interview Material URL'}
+                  </label>
+                  <input 
+                    style={s.inputField} 
+                    value={newJob.interview_material_url} 
+                    onChange={e => setNewJob({...newJob, interview_material_url: e.target.value})} 
+                    placeholder={newJob.opportunity_type === 'Training' ? "e.g. Link to Course Outline PDF" : "e.g. Link to Prep PDF or Folder"} 
+                  />
+                </div>
               </div>
               <button type="submit" style={s.primaryBtn}><Send size={18} /> Publish to Placement Portal</button>
             </form>
@@ -347,11 +412,51 @@ export default function CompanyDashboard() {
         )}
 
         {activeTab === 'analytics' && (
-          <div style={s.analyticsGrid}>
-            <div style={s.statCard}><h3 style={s.statLabel}>Active Drives</h3><p style={s.statValue}>{stats.total_jobs}</p></div>
-            <div style={s.statCard}><h3 style={s.statLabel}>Applications</h3><p style={s.statValue}>{stats.total_applications}</p></div>
-            <div style={s.statCard}><h3 style={s.statLabel}>Hired/Shortlisted</h3><p style={{...s.statValue, color:'#10b981'}}>{stats.total_shortlisted}</p></div>
-          </div>
+          <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} style={s.analyticsWrapper}>
+            <div style={s.statsGrid}>
+              <div style={s.statCard}>
+                <div style={{...s.cardIconArea, backgroundColor: '#eff6ff'}}><BarChart3 size={24} color="#2563eb" /></div>
+                <div>
+                  <p style={s.statLabel}>Active Drives</p>
+                  <h2 style={s.statValue}>{stats.total_jobs}</h2>
+                </div>
+              </div>
+              <div style={s.statCard}>
+                <div style={{...s.cardIconArea, backgroundColor: '#f0fdf4'}}><Users size={24} color="#10b981" /></div>
+                <div>
+                  <p style={s.statLabel}>Applications Received</p>
+                  <h2 style={s.statValue}>{stats.total_applications}</h2>
+                </div>
+              </div>
+              <div style={s.statCard}>
+                <div style={{...s.cardIconArea, backgroundColor: '#faf5ff'}}><CheckCircle2 size={24} color="#8b5cf6" /></div>
+                <div>
+                  <p style={s.statLabel}>Candidates Shortlisted</p>
+                  <h2 style={{...s.statValue, color: '#8b5cf6'}}>{stats.total_shortlisted}</h2>
+                </div>
+              </div>
+            </div>
+
+            <div style={s.analyticsCard}>
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                <h3 style={s.cardHeading}>Hiring Pipeline Efficiency</h3>
+                <span style={{fontWeight: '800', fontSize: '24px', color: '#2563eb'}}>
+                  {stats.total_applications > 0 ? ((stats.total_shortlisted / stats.total_applications) * 100).toFixed(1) : 0}%
+                </span>
+              </div>
+              <p style={{...s.subText, marginBottom: '20px'}}>Overall Selection Rate</p>
+              <div style={s.progressBarBg}>
+                <motion.div 
+                  initial={{ width: 0 }} 
+                  animate={{ width: `${stats.total_applications > 0 ? (stats.total_shortlisted / stats.total_applications * 100) : 0}%` }} 
+                  style={{...s.progressBarFill, backgroundColor: '#3b82f6'}} 
+                />
+              </div>
+              <p style={{...s.subText, marginTop: '12px', fontSize: '13px'}}>
+                The percentage of total applicants who have successfully progressed to the shortlist stage.
+              </p>
+            </div>
+          </motion.div>
         )}
       </main>
     </div>
@@ -402,10 +507,17 @@ const s = {
   primaryBtn: { padding: '16px 32px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '16px', fontWeight: '700', cursor: 'pointer', display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'center' },
   statusBadge: { padding: '6px 12px', borderRadius: '10px', fontSize: '12px', fontWeight: '800', textTransform: 'uppercase' },
   notification: { position: 'fixed', top: '30px', right: '30px', padding: '16px 32px', color: '#fff', borderRadius: '16px', zIndex: 1000, fontWeight: '700', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' },
-  analyticsGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' },
-  statCard: { backgroundColor: '#fff', padding: '32px', borderRadius: '24px', border: '1px solid #e2e8f0', textAlign: 'left' },
+  analyticsWrapper: { display: 'flex', flexDirection: 'column', gap: '30px' },
+  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' },
+  statCard: { backgroundColor: '#fff', padding: '24px', borderRadius: '24px', border: '1px solid #e2e8f0', textAlign: 'left', display: 'flex', flexDirection: 'column' },
+  cardIconArea: { width: '48px', height: '48px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' },
   statLabel: { fontSize: '14px', color: '#64748b', fontWeight: '700', marginBottom: '8px' },
-  statValue: { fontSize: '40px', fontWeight: '900', color: '#0f172a', margin: 0, letterSpacing: '-1px' },
+  statValue: { fontSize: '32px', fontWeight: '900', color: '#0f172a', margin: 0, letterSpacing: '-1px' },
+  analyticsCard: { backgroundColor: '#fff', padding: '32px', borderRadius: '24px', border: '1px solid #e2e8f0' },
+  cardHeading: { margin: 0, fontSize: '18px', fontWeight: '800', color: '#1e293b' },
+  progressBarBg: { width: '100%', height: '12px', backgroundColor: '#f1f5f9', borderRadius: '10px', overflow: 'hidden' },
+  progressBarFill: { height: '100%', borderRadius: '10px' },
+  subText: { color: '#64748b', fontSize: '14px', margin: '4px 0 0 0' },
   backLink: { background: 'none', border: 'none', color: '#2563eb', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' },
   logoutBtnHeader: { padding: '10px 20px', backgroundColor: '#fef2f2', color: '#ef4444', border: 'none', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '800', fontSize: '13px' },
   tableContainer: {
@@ -456,5 +568,7 @@ const s = {
     fontSize: '11px',
     fontWeight: '800',
     color: '#94a3b8'
-  }
+  },
+  typeTag: { fontSize: '10px', padding: '2px 8px', borderRadius: '20px', backgroundColor: '#f1f5f9', color: '#475569', marginRight: '8px', verticalAlign: 'middle' },
+  categoryTag: { fontWeight: '700', color: '#3b82f6', fontSize: '10px' }
 };

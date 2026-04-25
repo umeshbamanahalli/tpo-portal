@@ -9,4 +9,9 @@ const pool = new Pool({
   port: process.env.DB_PORT,
 });
 
+// Log unexpected errors on idle clients
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle PostgreSQL client', err);
+});
+
 module.exports = pool;
