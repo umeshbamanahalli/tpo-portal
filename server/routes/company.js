@@ -1,3 +1,27 @@
+const express = require('express');
+const router = express.Router();
+const pool = require('../db');
+const verifyToken = require('../middleware/verifyToken');
+
+// @route   GET /api/company/profile
+// @desc    Get company profile details
+router.get('/profile', verifyToken, async (req, res) => {
+  if (req.user.role !== 'company') return res.status(403).json({ msg: "Access Denied" });
+  try {
+    const result = await pool.query(
+      `SELECT c.*, u.email 
+       FROM companies c 
+       JOIN users u ON c.company_id = u.user_id 
+       WHERE c.company_id = $1::uuid`,
+      [req.user.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ msg: "Profile not found" });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).send("Server Error");
+  }
+});
+
 // @route   GET /api/company/my-drives
 // @desc    Get all drives posted by the logged-in company
 router.get('/my-drives', verifyToken, async (req, res) => {

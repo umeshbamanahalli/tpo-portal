@@ -7,6 +7,7 @@ const pool = require('./db'); // The database connection we created earlier
 const authRoutes = require('./routes/auth'); // We will create this next
 const studentRoutes = require('./routes/student');
 const jobRoutes = require('./routes/jobs');
+const companyRoutes = require('./routes/company');
 const adminRoutes = require('./routes/admin');
 const app = express();
 
@@ -37,6 +38,7 @@ app.use('/uploads/resumes', express.static(resumeDir));
 // Routes
 app.use('/api/auth', authRoutes);
 // ... existing middleware
+app.use('/api/company', companyRoutes);
 app.use('/api/student', studentRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/admin', adminRoutes);

@@ -2,13 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, PlusCircle, LogOut,
-  Send, Users, BarChart3, ShieldAlert, MapPin, ChevronLeft, Trash2, Calendar, Briefcase,FileText,CheckCircle2 
+  Send, Users, BarChart3, ShieldAlert, MapPin, ChevronLeft, Trash2, Calendar, Briefcase,FileText,CheckCircle2, Building2, Clock
 } from 'lucide-react';
 
 export default function CompanyDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [jobs, setJobs] = useState([]);
   const [applicants, setApplicants] = useState([]);
+  const [companyProfile, setCompanyProfile] = useState(null);
   const [selectedDrive, setSelectedDrive] = useState(null);
   const [stats, setStats] = useState({ total_jobs: 0, total_applications: 0, total_shortlisted: 0 });
   const [isApproved, setIsApproved] = useState(true);
@@ -31,23 +32,46 @@ export default function CompanyDashboard() {
     setTimeout(() => setNotification({ show: false, message: '', type: '' }), 3000);
   };
 
-  const fetchMyJobs = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/jobs/my-jobs', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.status === 403) { setIsApproved(false); return; }
-      const data = await res.json();
-      setJobs(Array.isArray(data) ? data : []);
+      const config = { headers: { 'Authorization': `Bearer ${token}` } };
+      
+      const [jobsRes, profileRes] = await Promise.all([
+        fetch('http://localhost:5000/api/jobs/my-jobs', config),
+        fetch('http://localhost:5000/api/company/profile', config)
+      ]);
+
+      if (jobsRes.status === 403) {
+        setIsApproved(false);
+        return;
+      }
+
+      if (!jobsRes.ok) {
+        throw new Error(`Jobs API failed with status ${jobsRes.status}`);
+      }
+      if (!profileRes.ok) {
+        // Attempt to parse error message from profileRes if available
+        const errorText = await profileRes.text(); // Get raw text to avoid JSON parsing errors
+        throw new Error(`Profile API failed with status ${profileRes.status}: ${errorText || 'Unknown error'}`);
+      }
+
+      const [jobsData, profileData] = await Promise.all([ // Only parse if .ok
+        jobsRes.json(),
+        profileRes.json().catch(() => null)
+      ]);
+
+      setJobs(Array.isArray(jobsData) ? jobsData : []);
+      setCompanyProfile(profileData);
       setIsApproved(true);
-    } catch {
-      triggerNotification("Failed to fetch job listings", "error");
+    } catch (err) {
+      console.error(err);
+      triggerNotification("Failed to synchronize dashboard data", "error");
     } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchMyJobs(); }, [fetchMyJobs]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleDeleteDrive = async (driveId) => {
     if (!window.confirm("Are you sure? This will delete the drive and all student applications permanently.")) return;
@@ -117,7 +141,7 @@ export default function CompanyDashboard() {
           company_category: 'Service',
           interview_material_url: ''
         });
-        fetchMyJobs();
+        fetchData();
         setActiveTab('dashboard');
       }
     } catch { triggerNotification("Connection error", "error"); }
@@ -168,6 +192,7 @@ export default function CompanyDashboard() {
           <div onClick={() => {setActiveTab('view-applicants'); setSelectedDrive(null);}} style={activeTab === 'view-applicants' ? { ...s.navItem, ...s.navActive } : s.navItem}><Users size={20} /> View Applicants</div>
           <div onClick={() => setActiveTab('post-job')} style={activeTab === 'post-job' ? { ...s.navItem, ...s.navActive } : s.navItem}><PlusCircle size={20} /> Post New Drive</div>
           <div onClick={fetchAnalytics} style={activeTab === 'analytics' ? { ...s.navItem, ...s.navActive } : s.navItem}><BarChart3 size={20} /> Analytics</div>
+          <div onClick={() => setActiveTab('profile')} style={activeTab === 'profile' ? { ...s.navItem, ...s.navActive } : s.navItem}><Building2 size={20} /> Company Profile</div>
         </nav>
       </aside>
 
@@ -176,7 +201,8 @@ export default function CompanyDashboard() {
           <h1 style={s.welcome}>
             {activeTab === 'view-applicants' ? (selectedDrive ? `Applicants: ${selectedDrive.job_role}` : 'Drive Directory') : 
              activeTab === 'post-job' ? 'Launch New Drive' : 
-             activeTab === 'analytics' ? 'Insights Dashboard' : 'Company HQ'}
+             activeTab === 'analytics' ? 'Insights Dashboard' : 
+             activeTab === 'profile' ? 'Profile Management' : 'Company HQ'}
           </h1>
           <button style={s.logoutBtnHeader} onClick={handleLogout}><LogOut size={16} /> Logout</button>
         </header>
@@ -455,6 +481,52 @@ export default function CompanyDashboard() {
               <p style={{...s.subText, marginTop: '12px', fontSize: '13px'}}>
                 The percentage of total applicants who have successfully progressed to the shortlist stage.
               </p>
+            </div>
+          </motion.div>
+        )}
+
+        {activeTab === 'profile' && companyProfile && (
+          <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} style={s.card}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '24px', marginBottom: '40px', paddingBottom: '30px', borderBottom: '1px solid #f1f5f9' }}>
+              <div style={{ ...s.logoIcon, width: '80px', height: '80px', fontSize: '32px' }}>
+                {companyProfile.company_name?.charAt(0)}
+              </div>
+              <div>
+                <h2 style={{ ...s.welcome, fontSize: '28px' }}>{companyProfile.company_name}</h2>
+                <p style={s.subText}>{companyProfile.company_category || 'Corporate'} Partner</p>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '40px' }}>
+              <section>
+                <h4 style={s.badgeLabel}>Verification Status</h4>
+                <div style={{ marginTop: '10px' }}>
+                  <span style={{
+                    ...s.statusBadge,
+                    backgroundColor: companyProfile.status === 'approved' ? '#dcfce7' : '#fef3c7',
+                    color: companyProfile.status === 'approved' ? '#166534' : '#92400e',
+                    padding: '8px 16px',
+                    fontSize: '14px'
+                  }}>
+                    {companyProfile.status === 'approved' ? <CheckCircle2 size={16} style={{ marginRight: '8px' }} /> : <Clock size={16} style={{ marginRight: '8px' }} />}
+                    {companyProfile.status?.toUpperCase() || 'PENDING'}
+                  </span>
+                </div>
+              </section>
+
+              <section>
+                <h4 style={s.badgeLabel}>Registered Email</h4>
+                <p style={{ ...s.boldText, marginTop: '10px' }}>{companyProfile.email}</p>
+              </section>
+
+              <section>
+                <h4 style={s.badgeLabel}>Official Website</h4>
+                <p style={{ marginTop: '10px' }}>
+                  <a href={companyProfile.website_url} target="_blank" rel="noreferrer" style={{ color: '#2563eb', fontWeight: '700', textDecoration: 'none' }}>
+                    {companyProfile.website_url || 'No Website Provided'}
+                  </a>
+                </p>
+              </section>
             </div>
           </motion.div>
         )}

@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import ErrorPage from './pages/ErrorPage';
 import StudentDashboard from './pages/StudentDashboard';
 import AdminDashboard from './pages/AdminDashboard'; // Don't forget these imports!
 import CompanyDashboard from './pages/CompanyDashboard';
@@ -34,6 +35,8 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path='/forgot-password' element={<ForgotPassword />}/>
+        <Route path='/error-page' element={<ErrorPage />} />
+
 
         {/* Private Student Route */}
         <Route path="/student-dashboard" element={

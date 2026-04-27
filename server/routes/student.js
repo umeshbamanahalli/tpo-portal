@@ -69,7 +69,7 @@ router.get("/drives", verifyToken, async (req, res) => {
 
     try {
         const drives = await pool.query(
-            `SELECT d.*, c.company_name,
+           `SELECT d.*, c.company_name,
                 (CASE WHEN s.cgpa >= d.min_cgpa_required THEN true ELSE false END) as is_eligible
              FROM placement_drives d
              LEFT JOIN companies c ON d.company_id = c.company_id
