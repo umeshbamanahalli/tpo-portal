@@ -181,3 +181,5 @@ CREATE TABLE notifications (
 -- Integrity	Very Strict	Moderate	Flexible (Low)
 -- JSON Support	Native & Indexed	Limited	Primary
 -- Best For	Complex Apps, FinTech	Simple Web Apps	Rapid Prototyping
+
+-- new sql commands added
